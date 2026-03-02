@@ -86,35 +86,39 @@ const Allocation = () => {
 
     // Computed filtered list — reacts instantly to any change
     const filteredList = useMemo(() => {
-        const query = searchQuery.toLowerCase().trim();
-        let results = hardware;
+        try {
+            const query = searchQuery.toLowerCase().trim();
+            let results = hardware;
 
-        // Apply Item Name filter
-        if (filterItemName) {
-            results = results.filter(h => h.Item_Name === filterItemName);
-        }
+            // Apply Item Name filter
+            if (filterItemName) {
+                results = results.filter(h => h.Item_Name === filterItemName);
+            }
 
-        // Apply STOCK filter
-        if (filterStock === 'STOCK') {
-            results = results.filter(h => String(h.Allocated_To) === 'STOCK');
-        } else if (filterStock === 'ALLOCATED') {
-            results = results.filter(h => h.Allocated_To && String(h.Allocated_To) !== 'STOCK');
-        }
+            // Apply STOCK filter
+            if (filterStock === 'STOCK') {
+                results = results.filter(h => String(h.Allocated_To) === 'STOCK');
+            } else if (filterStock === 'ALLOCATED') {
+                results = results.filter(h => h.Allocated_To && String(h.Allocated_To) !== 'STOCK');
+            }
 
-        // Apply text search
-        if (query) {
-            results = results.filter(h => {
-                const allocatedStr = String(h.Allocated_To || '');
-                const emp = employees.find(e => normalize(e.PIN) === normalize(h.Allocated_To));
-                const edpMatch = String(h.EDP_Serial || '').toLowerCase().includes(query);
-                const pinMatch = allocatedStr.toLowerCase().includes(query);
-                const nameMatch = emp?.Name?.toLowerCase().includes(query);
-                const itemMatch = String(h.Item_Name || '').toLowerCase().includes(query);
-                return edpMatch || pinMatch || nameMatch || itemMatch;
-            });
-        }
+            // Apply text search
+            if (query) {
+                results = results.filter(h => {
+                    try {
+                        const allocatedStr = String(h.Allocated_To || '');
+                        const emp = employees.find(e => normalize(e.PIN) === normalize(h.Allocated_To));
+                        const edpMatch = String(h.EDP_Serial || '').toLowerCase().includes(query);
+                        const pinMatch = allocatedStr.toLowerCase().includes(query);
+                        const nameMatch = emp?.Name?.toLowerCase().includes(query);
+                        const itemMatch = String(h.Item_Name || '').toLowerCase().includes(query);
+                        return edpMatch || pinMatch || nameMatch || itemMatch;
+                    } catch { return false; }
+                });
+            }
 
-        return results;
+            return results;
+        } catch { return hardware; }
     }, [searchQuery, filterItemName, filterStock, hardware, employees]);
 
     const handleOpenModal = (item) => {
@@ -340,13 +344,13 @@ const Allocation = () => {
                 </div>
             </div>
 
-            <div className="table-responsive">
+            <div className="table-responsive" style={{ overflowX: 'auto' }}>
                 {loading ? <p>Loading data...</p> : (
-                    <table className="supplier-table">
+                    <table className="supplier-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                         <thead>
                             <tr>
-                                <th>Item Name</th>
-                                <th>EDP Serial</th>
+                                <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #00d4aa' }}>Item Name</th>
+                                <th style={{ position: 'sticky', left: '120px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #00d4aa' }}>EDP Serial</th>
                                 <th>PIN</th>
                                 <th>Name</th>
                                 <th>Post</th>
@@ -358,6 +362,7 @@ const Allocation = () => {
                                 <th>Bill No</th>
                                 <th>Purchased</th>
                                 <th>Cost</th>
+                                <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -368,18 +373,28 @@ const Allocation = () => {
                                 const isInEWaste = ewasteItems.some(ew => ew.hardware_id === h.id);
                                 const isAllocatedInEWaste = isInEWaste && !isStock;
 
+                                // Status-based row color: E-Waste allocation > Under Repair > Not Working
+                                let rowBg = 'transparent';
+                                if (isAllocatedInEWaste) {
+                                    rowBg = '#fff3cd';
+                                } else if (h.Status === 'Not Working') {
+                                    rowBg = '#ffebeb';
+                                } else if (h.Status === 'Under Repair') {
+                                    rowBg = '#fff3e0';
+                                }
+
                                 return (
                                     <tr
                                         key={h.id}
                                         onDoubleClick={() => handleDoubleClick(h)}
                                         style={{
                                             cursor: 'pointer',
-                                            backgroundColor: isAllocatedInEWaste ? '#fff3cd' : 'transparent'
+                                            backgroundColor: rowBg
                                         }}
                                         title={isAllocatedInEWaste ? "This item is in E-Waste but still allocated" : "Double-click to view allocation history"}
                                     >
-                                        <td>{h.Item_Name}</td>
-                                        <td><strong>{h.EDP_Serial}</strong></td>
+                                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{h.Item_Name}</td>
+                                        <td style={{ position: 'sticky', left: '120px', zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}><strong>{h.EDP_Serial}</strong></td>
                                         <td>{isStock ? <span className="badge-stock">STOCK</span> : h.Allocated_To}</td>
                                         <td>{emp?.Name || '-'}</td>
                                         <td>{emp?.Present_Post || '-'}</td>
@@ -391,6 +406,22 @@ const Allocation = () => {
                                         <td>{h.Bill_Number}</td>
                                         <td>{getPurchasedDate(h.Bill_Number)}</td>
                                         <td>{h.Cost}</td>
+                                        <td>
+                                            <span style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                fontSize: '0.8em',
+                                                fontWeight: 600,
+                                                ...(h.Status === 'Not Working'
+                                                    ? { backgroundColor: '#f8d7da', color: '#721c24' }
+                                                    : h.Status === 'Under Repair'
+                                                        ? { backgroundColor: '#fff3cd', color: '#856404' }
+                                                        : { backgroundColor: '#d4edda', color: '#155724' }
+                                                )
+                                            }}>
+                                                {h.Status || 'Working'}
+                                            </span>
+                                        </td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '5px' }}>
                                                 <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleOpenModal(h); }} title="Re-allocate">

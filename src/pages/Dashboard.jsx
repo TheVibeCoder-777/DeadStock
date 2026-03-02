@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSync, faTachometerAlt, faExclamationTriangle, faBox, faUser, faFileAlt } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faSync, faTachometerAlt, faExclamationTriangle, faBox, faUser, faFileAlt, faWrench } from '@fortawesome/free-solid-svg-icons';
 import { formatDate } from '../utils/formatDate';
 
 const Dashboard = () => {
@@ -17,6 +17,11 @@ const Dashboard = () => {
     const [selectedItem, setSelectedItem] = useState(null);
     const [bifurcationData, setBifurcationData] = useState(null);
 
+    // Hardware Status (Under Repair / Not Working)
+    const [statusCounts, setStatusCounts] = useState({ underRepairCount: 0, notWorkingCount: 0 });
+    const [selectedStatusType, setSelectedStatusType] = useState(null);
+    const [statusDetailList, setStatusDetailList] = useState(null);
+
     const [alert, setAlert] = useState(null);
 
     const showAlert = (type, msg) => {
@@ -28,6 +33,7 @@ const Dashboard = () => {
     useEffect(() => {
         fetchRetirementSuggestions();
         fetchStockData();
+        fetchHardwareStatus();
     }, []);
 
     // NOC Search
@@ -86,6 +92,51 @@ const Dashboard = () => {
             showAlert('error', 'Failed to fetch stock data');
         } finally {
             setStockLoading(false);
+        }
+    };
+
+    // Fetch Hardware Status Counts
+    const fetchHardwareStatus = async () => {
+        try {
+            const res = await fetch('http://localhost:3001/api/dashboard/hardware-status');
+            const data = await res.json();
+            setStatusCounts(data);
+        } catch (error) {
+            console.error('Hardware status error:', error);
+        }
+    };
+
+    // Click on status tile to load detail list
+    const handleStatusTileClick = async (statusType) => {
+        setSelectedStatusType(statusType);
+        try {
+            const res = await fetch(`http://localhost:3001/api/dashboard/hardware-status?status=${encodeURIComponent(statusType)}`);
+            const data = await res.json();
+            setStatusDetailList(data);
+        } catch (error) {
+            console.error('Status detail error:', error);
+            showAlert('error', 'Failed to fetch status details');
+        }
+    };
+
+    // Change hardware status from dashboard
+    const handleStatusChange = async (hardwareId, newStatus) => {
+        try {
+            const res = await fetch('http://localhost:3001/api/dashboard/hardware-status/update', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: hardwareId, status: newStatus })
+            });
+            if (res.ok) {
+                showAlert('success', `Status changed to ${newStatus}`);
+                fetchHardwareStatus();
+                fetchStockData();
+                if (selectedStatusType) handleStatusTileClick(selectedStatusType);
+            } else {
+                showAlert('error', 'Failed to update status');
+            }
+        } catch (error) {
+            showAlert('error', 'Error updating status');
         }
     };
 
@@ -246,6 +297,134 @@ const Dashboard = () => {
                                                 <td>{formatDate(item.Date_of_Purchase)}</td>
                                                 <td>{item.Cost || '-'}</td>
                                                 <td>{item.Status || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Hardware Status Tiles */}
+            <div className="card" style={{ marginBottom: '30px' }}>
+                <div className="card-header">
+                    <h2><FontAwesomeIcon icon={faWrench} /> Hardware Status</h2>
+                    <button className="btn btn-outline" onClick={fetchHardwareStatus} style={{ marginLeft: 'auto' }}>
+                        <FontAwesomeIcon icon={faSync} /> Refresh
+                    </button>
+                </div>
+                <div className="card-body">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                        {/* Under Repair Tile */}
+                        <div
+                            className="stock-tile"
+                            onClick={() => handleStatusTileClick('Under Repair')}
+                            style={{
+                                background: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
+                                color: '#5d4037',
+                                padding: '20px',
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                transition: 'transform 0.2s, box-shadow 0.2s',
+                                boxShadow: selectedStatusType === 'Under Repair' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)',
+                                border: selectedStatusType === 'Under Repair' ? '3px solid #e65100' : '3px solid transparent'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <div style={{ fontSize: '2em', fontWeight: 'bold' }}>{statusCounts.underRepairCount || 0}</div>
+                            <div style={{ fontSize: '0.9em', marginTop: '5px', fontWeight: 600 }}>Under Repair</div>
+                        </div>
+
+                        {/* Not Working Tile */}
+                        <div
+                            className="stock-tile"
+                            onClick={() => handleStatusTileClick('Not Working')}
+                            style={{
+                                background: 'linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%)',
+                                color: 'white',
+                                padding: '20px',
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                transition: 'transform 0.2s, box-shadow 0.2s',
+                                boxShadow: selectedStatusType === 'Not Working' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)',
+                                border: selectedStatusType === 'Not Working' ? '3px solid #7f0000' : '3px solid transparent'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <div style={{ fontSize: '2em', fontWeight: 'bold' }}>{statusCounts.notWorkingCount || 0}</div>
+                            <div style={{ fontSize: '0.9em', marginTop: '5px', fontWeight: 600 }}>Not Working</div>
+                        </div>
+                    </div>
+
+                    {/* Status Detail Table */}
+                    {statusDetailList && (
+                        <div style={{ marginTop: '20px', padding: '20px', background: '#f8f9fa', borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                <h3 style={{ margin: 0, color: '#2c3e50' }}>
+                                    {statusDetailList.status} — Detailed List ({statusDetailList.items?.length || 0} items)
+                                </h3>
+                                <button className="btn btn-secondary" onClick={() => { setStatusDetailList(null); setSelectedStatusType(null); }}>Close</button>
+                            </div>
+                            <div className="table-responsive">
+                                <table className="supplier-table">
+                                    <thead>
+                                        <tr>
+                                            <th>EDP Serial</th>
+                                            <th>Item Name</th>
+                                            <th>Make</th>
+                                            <th>Capacity</th>
+                                            <th>Allocated To</th>
+                                            <th>Bill No</th>
+                                            <th>Cost</th>
+                                            <th>Status</th>
+                                            <th>Change Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(statusDetailList.items || []).map((item, idx) => (
+                                            <tr key={idx} style={{
+                                                backgroundColor: item.Status === 'Not Working' ? '#ffebeb' : item.Status === 'Under Repair' ? '#fff3e0' : 'transparent'
+                                            }}>
+                                                <td><strong>{item.EDP_Serial}</strong></td>
+                                                <td>{item.Item_Name}</td>
+                                                <td>{item.Make || '-'}</td>
+                                                <td>{item.Capacity || '-'}</td>
+                                                <td>{item.Employee_Name || '-'}</td>
+                                                <td>{item.Bill_Number || '-'}</td>
+                                                <td>{item.Cost || '-'}</td>
+                                                <td>
+                                                    <span style={{
+                                                        padding: '3px 8px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.8em',
+                                                        fontWeight: 600,
+                                                        ...(item.Status === 'Not Working'
+                                                            ? { backgroundColor: '#f8d7da', color: '#721c24' }
+                                                            : item.Status === 'Under Repair'
+                                                                ? { backgroundColor: '#fff3cd', color: '#856404' }
+                                                                : { backgroundColor: '#d4edda', color: '#155724' }
+                                                        )
+                                                    }}>
+                                                        {item.Status}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <select
+                                                        value={item.Status}
+                                                        onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                                                        style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}
+                                                    >
+                                                        <option value="Working">Working</option>
+                                                        <option value="Under Repair">Under Repair</option>
+                                                        <option value="Not Working">Not Working</option>
+                                                    </select>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>

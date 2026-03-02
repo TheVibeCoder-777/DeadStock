@@ -379,14 +379,18 @@ const Invoices = () => {
     // --- Computed Search (instant) ---
     const filteredInvoices = useMemo(() => {
         if (!searchQuery) return invoices;
-        const query = searchQuery.toLowerCase();
-        return invoices.filter(inv => {
-            if (searchCriteria === 'Supplier Name') {
-                return String(inv.Firm_Name || '').toLowerCase().includes(query);
-            } else {
-                return String(inv.Bill_Number || '').toLowerCase().includes(query);
-            }
-        });
+        try {
+            const query = searchQuery.toLowerCase();
+            return invoices.filter(inv => {
+                try {
+                    if (searchCriteria === 'Supplier Name') {
+                        return String(inv.Firm_Name || '').toLowerCase().includes(query);
+                    } else {
+                        return String(inv.Bill_Number || '').toLowerCase().includes(query);
+                    }
+                } catch { return false; }
+            });
+        } catch { return invoices; }
     }, [searchQuery, searchCriteria, invoices]);
 
     const handleClearSearch = () => {

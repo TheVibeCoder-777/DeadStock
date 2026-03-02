@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { formatDate } from '../utils/formatDate';
 import { useParams } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faSearch, faTimes, faEdit, faTrash, faSave, faBan, faDownload, faFileExcel } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faSearch, faTimes, faEdit, faTrash, faDownload, faFileExcel } from '@fortawesome/free-solid-svg-icons';
 
 const Hardware = () => {
     const { category } = useParams();
@@ -103,18 +103,26 @@ const Hardware = () => {
     const filteredList = useMemo(() => {
         let results = hardwareList;
         if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            if (searchCriteria === 'Supplier Name') {
-                results = hardwareList.filter(item => {
-                    const bill = invoices.find(inv => String(inv.Bill_Number) === String(item.Bill_Number));
-                    const supplierName = bill ? String(bill.Firm_Name || '').toLowerCase() : '';
-                    return supplierName.includes(query);
-                });
-            } else if (searchCriteria === 'EDP Serial Number') {
-                results = hardwareList.filter(item => String(item.EDP_Serial || '').toLowerCase().includes(query));
-            } else if (searchCriteria === 'Company Serial') {
-                results = hardwareList.filter(item => String(item.Company_Serial || '').toLowerCase().includes(query));
-            }
+            try {
+                const query = searchQuery.toLowerCase();
+                if (searchCriteria === 'Supplier Name') {
+                    results = hardwareList.filter(item => {
+                        try {
+                            const bill = invoices.find(inv => String(inv.Bill_Number) === String(item.Bill_Number));
+                            const supplierName = bill ? String(bill.Firm_Name || '').toLowerCase() : '';
+                            return supplierName.includes(query);
+                        } catch { return false; }
+                    });
+                } else if (searchCriteria === 'EDP Serial Number') {
+                    results = hardwareList.filter(item => {
+                        try { return String(item.EDP_Serial || '').toLowerCase().includes(query); } catch { return false; }
+                    });
+                } else if (searchCriteria === 'Company Serial') {
+                    results = hardwareList.filter(item => {
+                        try { return String(item.Company_Serial || '').toLowerCase().includes(query); } catch { return false; }
+                    });
+                }
+            } catch { results = hardwareList; }
         }
         return results;
     }, [searchQuery, searchCriteria, hardwareList, invoices]);
@@ -536,13 +544,14 @@ const Hardware = () => {
                 </div>
             </div>
 
-            <div className="table-responsive">
-                <table className="supplier-table">
+            <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                <table className="supplier-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                     <thead>
                         <tr>
-                            <th><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length === filteredList.length && filteredList.length > 0} /></th>
-                            <th>Item Name</th>
-                            <th>EDP Serial</th>
+                            <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '40px' }}><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length === filteredList.length && filteredList.length > 0} /></th>
+                            <th style={{ position: 'sticky', left: '40px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '90px' }}>Actions</th>
+                            <th style={{ position: 'sticky', left: '130px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #00d4aa' }}>Item Name</th>
+                            <th style={{ position: 'sticky', left: '250px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #00d4aa' }}>EDP Serial</th>
                             <th>Make</th>
                             <th>{capacityLabel}</th>
                             <th>RAM</th>
@@ -560,106 +569,170 @@ const Hardware = () => {
                             <th>Add. Item</th>
                             <th>Status</th>
                             <th>Remarks</th>
-                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {filteredList.map(item => (
-                            <tr key={item.id} className={editRowId === item.id ? '' : getRowClass(item.Status)} style={editRowId === item.id ? {} : (getRowClass(item.Status) === 'row-red' ? { backgroundColor: '#ffebeb' } : (getRowClass(item.Status) === 'row-orange' ? { backgroundColor: '#fff3e0' } : {}))}>
-                                <td style={{ textAlign: 'center' }}>
+                            <tr key={item.id} className={getRowClass(item.Status)} style={getRowClass(item.Status) === 'row-red' ? { backgroundColor: '#ffebeb' } : (getRowClass(item.Status) === 'row-orange' ? { backgroundColor: '#fff3e0' } : {})}>
+                                <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: 'inherit', textAlign: 'center' }}>
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.includes(item.id)}
                                         onChange={() => toggleSelect(item.id)}
                                     />
                                 </td>
-                                {editRowId === item.id ? (
-                                    <>
-                                        <td>{item.Item_Name}</td>
-                                        <td>{item.EDP_Serial}</td>
-                                        <td>
-                                            <select value={editFormData.Make} onChange={e => setEditFormData({ ...editFormData, Make: e.target.value })} style={{ width: '80px' }}>
-                                                <option value="">Select</option>
-                                                {makeOptions.map(make => <option key={make} value={make}>{make}</option>)}
-                                            </select>
-                                        </td>
-                                        <td><input type="text" value={editFormData.Capacity} onChange={e => setEditFormData({ ...editFormData, Capacity: e.target.value })} style={{ width: '60px' }} placeholder={capacityLabel} /></td>
-                                        <td><input type="text" value={editFormData.RAM} onChange={e => setEditFormData({ ...editFormData, RAM: e.target.value })} style={{ width: '50px' }} /></td>
-                                        <td><input type="text" value={editFormData.OS} onChange={e => setEditFormData({ ...editFormData, OS: e.target.value })} style={{ width: '50px' }} /></td>
-                                        <td><input type="text" value={editFormData.Office} onChange={e => setEditFormData({ ...editFormData, Office: e.target.value })} style={{ width: '50px' }} /></td>
-                                        <td><input type="text" value={editFormData.Speed} onChange={e => setEditFormData({ ...editFormData, Speed: e.target.value })} style={{ width: '50px' }} /></td>
-                                        <td><input type="text" value={editFormData.IP} onChange={e => setEditFormData({ ...editFormData, IP: e.target.value })} style={{ width: '90px' }} /></td>
-                                        <td><input type="text" value={editFormData.MAC} onChange={e => setEditFormData({ ...editFormData, MAC: e.target.value })} style={{ width: '110px' }} /></td>
-                                        <td><input type="text" value={editFormData.Company_Serial} onChange={e => setEditFormData({ ...editFormData, Company_Serial: e.target.value })} style={{ width: '100px' }} /></td>
-                                        <td>
-                                            <select value={editFormData.Bill_Number} onChange={e => setEditFormData({ ...editFormData, Bill_Number: e.target.value })} style={{ width: '80px' }}>
-                                                <option value="">Select</option>
-                                                {invoices.map(i => <option key={i.id} value={i.Bill_Number}>{i.Bill_Number}</option>)}
-                                            </select>
-                                        </td>
-                                        <td><input type="number" value={editFormData.Cost} onChange={e => setEditFormData({ ...editFormData, Cost: e.target.value })} style={{ width: '60px' }} /></td>
-                                        <td>
-                                            <select value={editFormData.AMC} onChange={e => setEditFormData({ ...editFormData, AMC: e.target.value })} style={{ width: '60px' }}>
-                                                <option value="No">No</option>
-                                                <option value="Yes">Yes</option>
-                                            </select>
-                                        </td>
-                                        <td>
-                                            {editFormData.AMC === 'Yes' ? (
-                                                <input type="date" value={editFormData.AMC_Upto} onChange={e => setEditFormData({ ...editFormData, AMC_Upto: e.target.value })} style={{ width: '100px' }} />
-                                            ) : '-'}
-                                        </td>
-                                        <td><input type="date" value={editFormData.Warranty_Upto || ''} onChange={e => setEditFormData({ ...editFormData, Warranty_Upto: e.target.value })} style={{ width: '100px' }} /></td>
-                                        <td><input type="text" value={editFormData.Additional_Item} onChange={e => setEditFormData({ ...editFormData, Additional_Item: e.target.value })} style={{ width: '80px' }} /></td>
-                                        <td>
-                                            <select value={editFormData.Status} onChange={e => setEditFormData({ ...editFormData, Status: e.target.value })} style={{ width: '80px' }}>
-                                                <option value="Working">Working</option>
-                                                <option value="Not Working">Not Working</option>
-                                                <option value="Under Repair">Under Repair</option>
-                                            </select>
-                                        </td>
-                                        <td><input type="text" value={editFormData.Remarks} onChange={e => setEditFormData({ ...editFormData, Remarks: e.target.value })} style={{ width: '80px' }} /></td>
-                                        <td>
-                                            <div className="action-buttons">
-                                                <button className="btn-icon update" onClick={() => handleUpdate(item.id)}><FontAwesomeIcon icon={faSave} /></button>
-                                                <button className="btn-icon cancel" onClick={() => setEditRowId(null)}><FontAwesomeIcon icon={faBan} /></button>
-                                            </div>
-                                        </td>
-                                    </>
-                                ) : (
-                                    <>
-                                        <td>{item.Item_Name}</td>
-                                        <td>{item.EDP_Serial}</td>
-                                        <td>{item.Make}</td>
-                                        <td>{item.Capacity}</td>
-                                        <td>{item.RAM}</td>
-                                        <td>{item.OS}</td>
-                                        <td>{item.Office}</td>
-                                        <td>{item.Speed}</td>
-                                        <td>{item.IP}</td>
-                                        <td>{item.MAC}</td>
-                                        <td>{item.Company_Serial}</td>
-                                        <td>{item.Bill_Number}</td>
-                                        <td>{item.Cost}</td>
-                                        <td>{item.AMC}</td>
-                                        <td>{item.AMC === 'Yes' ? formatDate(item.AMC_Upto) : '-'}</td>
-                                        <td>{formatDate(item.Warranty_Upto)}</td>
-                                        <td>{item.Additional_Item}</td>
-                                        <td>{item.Status}</td>
-                                        <td>{item.Remarks}</td>
-                                        <td>
-                                            <div className="action-buttons">
-                                                <button className="btn-icon edit" onClick={() => startEdit(item)}><FontAwesomeIcon icon={faEdit} /></button>
-                                                <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><FontAwesomeIcon icon={faTrash} /></button>
-                                            </div>
-                                        </td>
-                                    </>
-                                )}
+                                <td style={{ position: 'sticky', left: '40px', zIndex: 1, backgroundColor: 'inherit' }}>
+                                    <div className="action-buttons">
+                                        <button className="btn-icon edit" onClick={() => startEdit(item)}><FontAwesomeIcon icon={faEdit} /></button>
+                                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><FontAwesomeIcon icon={faTrash} /></button>
+                                    </div>
+                                </td>
+                                <td style={{ position: 'sticky', left: '130px', zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.Item_Name}</td>
+                                <td style={{ position: 'sticky', left: '250px', zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.EDP_Serial}</td>
+                                <td>{item.Make}</td>
+                                <td>{item.Capacity}</td>
+                                <td>{item.RAM}</td>
+                                <td>{item.OS}</td>
+                                <td>{item.Office}</td>
+                                <td>{item.Speed}</td>
+                                <td>{item.IP}</td>
+                                <td>{item.MAC}</td>
+                                <td>{item.Company_Serial}</td>
+                                <td>{item.Bill_Number}</td>
+                                <td>{item.Cost}</td>
+                                <td>{item.AMC}</td>
+                                <td>{item.AMC === 'Yes' ? formatDate(item.AMC_Upto) : '-'}</td>
+                                <td>{formatDate(item.Warranty_Upto)}</td>
+                                <td>{item.Additional_Item}</td>
+                                <td>{item.Status}</td>
+                                <td>{item.Remarks}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+
+            {/* Edit Hardware Modal */}
+            {editRowId && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto' }}>
+                        <div className="modal-header">
+                            <h3>Edit {editFormData.Item_Name} — {editFormData.EDP_Serial}</h3>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Item Name</label>
+                                    <input type="text" className="form-input" value={editFormData.Item_Name || ''} disabled style={{ backgroundColor: '#f0f0f0' }} />
+                                </div>
+                                <div className="form-group">
+                                    <label>EDP Serial</label>
+                                    <input type="text" className="form-input" value={editFormData.EDP_Serial || ''} disabled style={{ backgroundColor: '#f0f0f0' }} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Make</label>
+                                    <select className="form-select" value={editFormData.Make || ''} onChange={e => setEditFormData({ ...editFormData, Make: e.target.value })}>
+                                        <option value="">Select</option>
+                                        {makeOptions.map(make => <option key={make} value={make}>{make}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>{capacityLabel}</label>
+                                    <input type="text" className="form-input" placeholder={capacityLabel} value={editFormData.Capacity || ''} onChange={e => setEditFormData({ ...editFormData, Capacity: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>RAM</label>
+                                    <input type="text" className="form-input" value={editFormData.RAM || ''} onChange={e => setEditFormData({ ...editFormData, RAM: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>OS</label>
+                                    <input type="text" className="form-input" value={editFormData.OS || ''} onChange={e => setEditFormData({ ...editFormData, OS: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Office</label>
+                                    <input type="text" className="form-input" value={editFormData.Office || ''} onChange={e => setEditFormData({ ...editFormData, Office: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Speed</label>
+                                    <input type="text" className="form-input" value={editFormData.Speed || ''} onChange={e => setEditFormData({ ...editFormData, Speed: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>IP</label>
+                                    <input type="text" className="form-input" value={editFormData.IP || ''} onChange={e => setEditFormData({ ...editFormData, IP: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>MAC</label>
+                                    <input type="text" className="form-input" value={editFormData.MAC || ''} onChange={e => setEditFormData({ ...editFormData, MAC: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Company Serial</label>
+                                    <input type="text" className="form-input" value={editFormData.Company_Serial || ''} onChange={e => setEditFormData({ ...editFormData, Company_Serial: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Bill Number</label>
+                                    <select className="form-select" value={editFormData.Bill_Number || ''} onChange={e => setEditFormData({ ...editFormData, Bill_Number: e.target.value })}>
+                                        <option value="">Select</option>
+                                        {invoices.map(i => <option key={i.id} value={i.Bill_Number}>{i.Bill_Number}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>Cost (Rs.)</label>
+                                    <input type="number" className="form-input" value={editFormData.Cost || ''} onChange={e => setEditFormData({ ...editFormData, Cost: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>AMC</label>
+                                    <select className="form-select" value={editFormData.AMC || 'No'} onChange={e => setEditFormData({ ...editFormData, AMC: e.target.value })}>
+                                        <option value="No">No</option>
+                                        <option value="Yes">Yes</option>
+                                    </select>
+                                </div>
+                                {editFormData.AMC === 'Yes' && (
+                                    <div className="form-group">
+                                        <label>AMC Upto</label>
+                                        <input type="date" className="form-input" value={editFormData.AMC_Upto || ''} onChange={e => setEditFormData({ ...editFormData, AMC_Upto: e.target.value })} />
+                                    </div>
+                                )}
+                                <div className="form-group">
+                                    <label>Warranty Upto</label>
+                                    <input type="date" className="form-input" value={editFormData.Warranty_Upto || ''} onChange={e => setEditFormData({ ...editFormData, Warranty_Upto: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Additional Item</label>
+                                    <input type="text" className="form-input" value={editFormData.Additional_Item || ''} onChange={e => setEditFormData({ ...editFormData, Additional_Item: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Status</label>
+                                    <select className="form-select" value={editFormData.Status || 'Working'} onChange={e => setEditFormData({ ...editFormData, Status: e.target.value })}>
+                                        <option value="Working">Working</option>
+                                        <option value="Not Working">Not Working</option>
+                                        <option value="Under Repair">Under Repair</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>Remarks</label>
+                                    <input type="text" className="form-input" value={editFormData.Remarks || ''} onChange={e => setEditFormData({ ...editFormData, Remarks: e.target.value })} />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => { setEditRowId(null); setEditFormData({}); }}>Close</button>
+                            <button className="btn btn-primary" onClick={() => handleUpdate(editRowId)}>Save</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Item Wizard Modal */}
             {showModal && (

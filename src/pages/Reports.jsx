@@ -192,10 +192,18 @@ const Reports = () => {
                                                 <td>{item.Stock_Quantity}</td>
                                                 <td>
                                                     {item.isSubtotal || item.isGrandTotal ? '' : (
-                                                        <span className={`status-badge ${item.AMC_Warranty_Status === 'Under AMC' ? 'status-active' :
-                                                            item.AMC_Warranty_Status === 'Under Warranty' ? 'status-warning' :
-                                                                'status-inactive'
-                                                            }`}>
+                                                        <span style={{
+                                                            padding: '4px 10px',
+                                                            borderRadius: '4px',
+                                                            fontSize: '0.85em',
+                                                            fontWeight: 600,
+                                                            ...(item.AMC_Warranty_Status === 'Under AMC' || item.AMC_Warranty_Status === 'Under Warranty'
+                                                                ? { backgroundColor: '#d4edda', color: '#155724' }
+                                                                : item.AMC_Warranty_Status && item.AMC_Warranty_Status.includes('AMC') && item.AMC_Warranty_Status.includes('Warranty')
+                                                                    ? { backgroundColor: '#fff3cd', color: '#856404' }
+                                                                    : { backgroundColor: '#f8d7da', color: '#721c24' }
+                                                            )
+                                                        }}>
                                                             {item.AMC_Warranty_Status}
                                                         </span>
                                                     )}

@@ -318,21 +318,23 @@ const Suppliers = () => {
     // --- Computed Search (instant) ---
     const filteredSuppliers = useMemo(() => {
         if (!searchQuery) return suppliers;
-        const query = searchQuery.toLowerCase();
-        if (searchCriteria === 'All') {
-            return suppliers.filter(s =>
-                String(s.Supplier_Name || '').toLowerCase().includes(query) ||
-                String(s.City || '').toLowerCase().includes(query) ||
-                String(s.State || '').toLowerCase().includes(query)
-            );
-        } else if (searchCriteria === 'Supplier Name') {
-            return suppliers.filter(s => String(s.Supplier_Name || '').toLowerCase().includes(query));
-        } else if (searchCriteria === 'City') {
-            return suppliers.filter(s => String(s.City || '').toLowerCase().includes(query));
-        } else if (searchCriteria === 'State') {
-            return suppliers.filter(s => String(s.State || '').toLowerCase().includes(query));
-        }
-        return suppliers;
+        try {
+            const query = searchQuery.toLowerCase();
+            return suppliers.filter(s => {
+                try {
+                    if (searchCriteria === 'Supplier Name') {
+                        return String(s.Supplier_Name || '').toLowerCase().includes(query);
+                    } else if (searchCriteria === 'City') {
+                        return String(s.City || '').toLowerCase().includes(query);
+                    } else if (searchCriteria === 'State') {
+                        return String(s.State || '').toLowerCase().includes(query);
+                    }
+                    return String(s.Supplier_Name || '').toLowerCase().includes(query) ||
+                        String(s.City || '').toLowerCase().includes(query) ||
+                        String(s.State || '').toLowerCase().includes(query);
+                } catch { return false; }
+            });
+        } catch { return suppliers; }
     }, [searchQuery, searchCriteria, suppliers]);
 
     const handleClearSearch = () => {

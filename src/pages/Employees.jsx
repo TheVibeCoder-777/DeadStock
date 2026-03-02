@@ -72,11 +72,15 @@ const Employees = () => {
 
     const filteredList = useMemo(() => {
         if (!searchQuery) return employees;
-        const query = searchQuery.toLowerCase().trim();
-        return employees.filter(e => {
-            const field = searchCriteria === 'PIN' ? e.PIN : e.Name;
-            return String(field || '').toLowerCase().includes(query);
-        });
+        try {
+            const query = searchQuery.toLowerCase().trim();
+            return employees.filter(e => {
+                try {
+                    const field = searchCriteria === 'PIN' ? e.PIN : e.Name;
+                    return String(field || '').toLowerCase().includes(query);
+                } catch { return false; }
+            });
+        } catch { return employees; }
     }, [searchQuery, searchCriteria, employees]);
 
     const handleClearSearch = () => {

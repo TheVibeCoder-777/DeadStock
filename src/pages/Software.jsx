@@ -92,10 +92,17 @@ const Software = () => {
     // --- Computed Search (instant) ---
     const filteredSoftware = useMemo(() => {
         if (!searchQuery) return software;
-        const query = searchQuery.toLowerCase();
-        return software.filter(s =>
-            String(s.Software_Name || '').toLowerCase().includes(query)
-        );
+        try {
+            const query = searchQuery.toLowerCase();
+            return software.filter(s => {
+                try {
+                    return String(s.Software_Name || '').toLowerCase().includes(query) ||
+                        String(s.Bill_Number || '').toLowerCase().includes(query) ||
+                        String(s.Vendor_Name || '').toLowerCase().includes(query) ||
+                        String(s.Issued_To || '').toLowerCase().includes(query);
+                } catch { return false; }
+            });
+        } catch { return software; }
     }, [searchQuery, software]);
 
     const handleOpenModal = (item = null) => {

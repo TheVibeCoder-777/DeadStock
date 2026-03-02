@@ -95,12 +95,16 @@ const EWasteTable = () => {
     // --- Computed Search (instant) ---
     const filteredHardware = useMemo(() => {
         if (!searchQuery) return allHardware;
-        const query = searchQuery.toLowerCase();
-        return allHardware.filter(h =>
-            String(h.EDP_Serial || '').toLowerCase().includes(query) ||
-            String(h.Item_Name || '').toLowerCase().includes(query) ||
-            String(h.Make || '').toLowerCase().includes(query)
-        );
+        try {
+            const query = searchQuery.toLowerCase();
+            return allHardware.filter(h => {
+                try {
+                    return String(h.EDP_Serial || '').toLowerCase().includes(query) ||
+                        String(h.Item_Name || '').toLowerCase().includes(query) ||
+                        String(h.Make || '').toLowerCase().includes(query);
+                } catch { return false; }
+            });
+        } catch { return allHardware; }
     }, [searchQuery, allHardware]);
 
     const toggleHardwareSelection = (hw) => {

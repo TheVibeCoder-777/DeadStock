@@ -2960,6 +2960,70 @@ app.get('/api/dashboard/stock-count', async (req, res) => {
     }
 });
 
+// --- Dashboard: Hardware Status (Under Repair / Not Working) ---
+app.get('/api/dashboard/hardware-status', async (req, res) => {
+    try {
+        const { status } = req.query;
+        await db.read();
+        const hardware = db.data.hardware || [];
+        const invoices = db.data.invoices || [];
+        const employees = db.data.employees || [];
+
+        const underRepair = hardware.filter(h => h.Status === 'Under Repair');
+        const notWorking = hardware.filter(h => h.Status === 'Not Working');
+
+        if (status) {
+            const items = (status === 'Under Repair' ? underRepair : notWorking).map(hw => {
+                const invoice = invoices.find(inv => inv.Bill_Number === hw.Bill_Number);
+                const emp = employees.find(e => String(e.PIN) === String(hw.Allocated_To));
+                return {
+                    id: hw.id,
+                    Item_Name: hw.Item_Name,
+                    EDP_Serial: hw.EDP_Serial,
+                    Make: hw.Make,
+                    Capacity: hw.Capacity,
+                    RAM: hw.RAM,
+                    Bill_Number: hw.Bill_Number,
+                    Cost: hw.Cost,
+                    Status: hw.Status,
+                    Allocated_To: hw.Allocated_To,
+                    Employee_Name: emp ? emp.Name : (hw.Allocated_To === 'STOCK' ? 'STOCK' : hw.Allocated_To || '-'),
+                    Date_of_Purchase: hw.Date_of_Purchase || (invoice ? invoice.Date : '')
+                };
+            });
+            return res.json({ status, items });
+        }
+
+        res.json({
+            underRepairCount: underRepair.length,
+            notWorkingCount: notWorking.length
+        });
+    } catch (error) {
+        console.error('Hardware status error:', error);
+        res.status(500).json({ error: 'Failed to get hardware status' });
+    }
+});
+
+// --- Dashboard: Update Hardware Status ---
+app.put('/api/dashboard/hardware-status/update', async (req, res) => {
+    try {
+        const { id, status } = req.body;
+        if (!id || !status) return res.status(400).json({ error: 'id and status are required' });
+
+        await db.read();
+        const index = db.data.hardware.findIndex(h => h.id === id);
+        if (index === -1) return res.status(404).json({ error: 'Hardware not found' });
+
+        db.data.hardware[index].Status = status;
+        await db.write();
+
+        res.json({ message: 'Status updated', item: db.data.hardware[index] });
+    } catch (error) {
+        console.error('Hardware status update error:', error);
+        res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
 // TEST ENDPOINT - verify server is running updated code
 app.get('/api/test-delete-debug', async (req, res) => {
     console.log('TEST ENDPOINT HIT!');
