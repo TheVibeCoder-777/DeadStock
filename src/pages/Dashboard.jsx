@@ -322,8 +322,8 @@ const Dashboard = () => {
                             className="stock-tile"
                             onClick={() => handleStatusTileClick('Under Repair')}
                             style={{
-                                background: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
-                                color: '#5d4037',
+                                background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+                                color: '#6d4c00',
                                 padding: '20px',
                                 borderRadius: '8px',
                                 textAlign: 'center',
@@ -344,8 +344,8 @@ const Dashboard = () => {
                             className="stock-tile"
                             onClick={() => handleStatusTileClick('Not Working')}
                             style={{
-                                background: 'linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%)',
-                                color: 'white',
+                                background: 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)',
+                                color: '#b71c1c',
                                 padding: '20px',
                                 borderRadius: '8px',
                                 textAlign: 'center',

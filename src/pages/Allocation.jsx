@@ -349,8 +349,9 @@ const Allocation = () => {
                     <table className="supplier-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                         <thead>
                             <tr>
-                                <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #00d4aa' }}>Item Name</th>
-                                <th style={{ position: 'sticky', left: '120px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #00d4aa' }}>EDP Serial</th>
+                                <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '90px' }}>Actions</th>
+                                <th style={{ position: 'sticky', left: '90px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #e0e0e0' }}>Item Name</th>
+                                <th style={{ position: 'sticky', left: '210px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #e0e0e0' }}>EDP Serial</th>
                                 <th>PIN</th>
                                 <th>Name</th>
                                 <th>Post</th>
@@ -363,7 +364,6 @@ const Allocation = () => {
                                 <th>Purchased</th>
                                 <th>Cost</th>
                                 <th>Status</th>
-                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -393,8 +393,18 @@ const Allocation = () => {
                                         }}
                                         title={isAllocatedInEWaste ? "This item is in E-Waste but still allocated" : "Double-click to view allocation history"}
                                     >
-                                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{h.Item_Name}</td>
-                                        <td style={{ position: 'sticky', left: '120px', zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}><strong>{h.EDP_Serial}</strong></td>
+                                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: '#ffffff' }}>
+                                            <div style={{ display: 'flex', gap: '5px' }}>
+                                                <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleOpenModal(h); }} title="Re-allocate">
+                                                    <FontAwesomeIcon icon={faUserCheck} />
+                                                </button>
+                                                <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleDoubleClick(h); }} title="View History">
+                                                    <FontAwesomeIcon icon={faHistory} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td style={{ position: 'sticky', left: '90px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{h.Item_Name}</td>
+                                        <td style={{ position: 'sticky', left: '210px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}><strong>{h.EDP_Serial}</strong></td>
                                         <td>{isStock ? <span className="badge-stock">STOCK</span> : h.Allocated_To}</td>
                                         <td>{emp?.Name || '-'}</td>
                                         <td>{emp?.Present_Post || '-'}</td>
@@ -421,16 +431,6 @@ const Allocation = () => {
                                             }}>
                                                 {h.Status || 'Working'}
                                             </span>
-                                        </td>
-                                        <td>
-                                            <div style={{ display: 'flex', gap: '5px' }}>
-                                                <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleOpenModal(h); }} title="Re-allocate">
-                                                    <FontAwesomeIcon icon={faUserCheck} />
-                                                </button>
-                                                <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleDoubleClick(h); }} title="View History">
-                                                    <FontAwesomeIcon icon={faHistory} />
-                                                </button>
-                                            </div>
                                         </td>
                                     </tr>
                                 );
