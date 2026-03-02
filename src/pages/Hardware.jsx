@@ -550,8 +550,8 @@ const Hardware = () => {
                         <tr>
                             <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '40px' }}><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length === filteredList.length && filteredList.length > 0} /></th>
                             <th style={{ position: 'sticky', left: '40px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '90px' }}>Actions</th>
-                            <th style={{ position: 'sticky', left: '130px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #00d4aa' }}>Item Name</th>
-                            <th style={{ position: 'sticky', left: '250px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #00d4aa' }}>EDP Serial</th>
+                            <th style={{ position: 'sticky', left: '130px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #e0e0e0' }}>Item Name</th>
+                            <th style={{ position: 'sticky', left: '250px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #e0e0e0' }}>EDP Serial</th>
                             <th>Make</th>
                             <th>{capacityLabel}</th>
                             <th>RAM</th>
@@ -574,21 +574,21 @@ const Hardware = () => {
                     <tbody>
                         {filteredList.map(item => (
                             <tr key={item.id} className={getRowClass(item.Status)} style={getRowClass(item.Status) === 'row-red' ? { backgroundColor: '#ffebeb' } : (getRowClass(item.Status) === 'row-orange' ? { backgroundColor: '#fff3e0' } : {})}>
-                                <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: 'inherit', textAlign: 'center' }}>
+                                <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: '#ffffff', textAlign: 'center' }}>
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.includes(item.id)}
                                         onChange={() => toggleSelect(item.id)}
                                     />
                                 </td>
-                                <td style={{ position: 'sticky', left: '40px', zIndex: 1, backgroundColor: 'inherit' }}>
+                                <td style={{ position: 'sticky', left: '40px', zIndex: 1, backgroundColor: '#ffffff' }}>
                                     <div className="action-buttons">
                                         <button className="btn-icon edit" onClick={() => startEdit(item)}><FontAwesomeIcon icon={faEdit} /></button>
                                         <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><FontAwesomeIcon icon={faTrash} /></button>
                                     </div>
                                 </td>
-                                <td style={{ position: 'sticky', left: '130px', zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.Item_Name}</td>
-                                <td style={{ position: 'sticky', left: '250px', zIndex: 1, backgroundColor: 'inherit', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.EDP_Serial}</td>
+                                <td style={{ position: 'sticky', left: '130px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.Item_Name}</td>
+                                <td style={{ position: 'sticky', left: '250px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.EDP_Serial}</td>
                                 <td>{item.Make}</td>
                                 <td>{item.Capacity}</td>
                                 <td>{item.RAM}</td>
