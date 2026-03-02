@@ -59,8 +59,8 @@ const Suppliers = () => {
 
     const handleCreateSupplier = async () => {
         // Validation
-        if (!newSupplier.Category || !newSupplier.Supplier_Name || !newSupplier.Address_1 || !newSupplier.City) {
-            showAlert('error', 'Please fill in all required fields');
+        if (!newSupplier.Supplier_ID || !newSupplier.Category || !newSupplier.Supplier_Name || !newSupplier.Address_1 || !newSupplier.City) {
+            showAlert('error', 'Please fill in all required fields (including Supplier ID)');
             return;
         }
 
@@ -112,11 +112,11 @@ const Suppliers = () => {
         }
     };
 
-    const handleDeleteSupplier = async (id) => {
+    const handleDeleteSupplier = async (id, s_id) => {
         if (window.confirm('Are you sure you want to delete this supplier?')) {
             setProcessing(true);
             try {
-                const response = await fetch(`http://localhost:3001/api/suppliers/${id}`, {
+                const response = await fetch(`http://localhost:3001/api/suppliers/${id || s_id}`, {
                     method: 'DELETE'
                 });
                 if (response.ok) {
@@ -392,7 +392,22 @@ const Suppliers = () => {
             {/* Toolbar */}
             <div className="toolbar">
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                    <button className="btn btn-primary" onClick={() => {
+                        // Auto-generate Supplier ID when opening modal
+                        let maxId = 0;
+                        suppliers.forEach(s => {
+                            if (s.Supplier_ID && s.Supplier_ID.startsWith('S')) {
+                                const num = parseInt(s.Supplier_ID.substring(1), 10);
+                                if (!isNaN(num) && num > maxId) maxId = num;
+                            }
+                        });
+                        const nextId = `S${String(maxId + 1).padStart(3, '0')}`;
+                        setNewSupplier({
+                            Supplier_ID: nextId, Category: '', Supplier_Name: '', Address_1: '', Address_2: '',
+                            City: '', State: '', PIN_Code: '', POC_Person: '', Phone_Number: '', Email: ''
+                        });
+                        setShowModal(true);
+                    }}>
                         <FontAwesomeIcon icon={faPlus} /> New Supplier
                     </button>
                     {/* Excel Buttons */}
@@ -589,7 +604,7 @@ const Suppliers = () => {
                                             <td>
                                                 <div className="action-buttons">
                                                     <button className="btn-icon edit" title="Edit" onClick={() => startEdit(s)}><FontAwesomeIcon icon={faEdit} /></button>
-                                                    <button className="btn-icon delete" title="Delete" onClick={() => handleDeleteSupplier(s.Supplier_ID)}><FontAwesomeIcon icon={faTrash} /></button>
+                                                    <button className="btn-icon delete" title="Delete" onClick={() => handleDeleteSupplier(s.id, s.Supplier_ID)}><FontAwesomeIcon icon={faTrash} /></button>
                                                 </div>
                                             </td>
                                         </>

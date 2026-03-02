@@ -168,14 +168,14 @@ app.put('/api/suppliers/:id', async (req, res) => {
     }
 });
 
-// DELETE Supplier
+// DELETE Supplier (match by Supplier_ID or fallback to id field)
 app.delete('/api/suppliers/:id', async (req, res) => {
     try {
         const { id } = req.params;
         await db.read();
 
         const initialLength = db.data.suppliers.length;
-        db.data.suppliers = db.data.suppliers.filter(s => s.Supplier_ID !== id);
+        db.data.suppliers = db.data.suppliers.filter(s => s.Supplier_ID !== id && s.id !== id);
 
         if (db.data.suppliers.length < initialLength) {
             await db.write();
