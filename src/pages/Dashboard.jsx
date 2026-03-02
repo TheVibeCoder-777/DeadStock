@@ -329,8 +329,7 @@ const Dashboard = () => {
                                 textAlign: 'center',
                                 cursor: 'pointer',
                                 transition: 'transform 0.2s, box-shadow 0.2s',
-                                boxShadow: selectedStatusType === 'Under Repair' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)',
-                                border: selectedStatusType === 'Under Repair' ? '3px solid #e65100' : '3px solid transparent'
+                                boxShadow: selectedStatusType === 'Under Repair' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)'
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
                             onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
@@ -351,8 +350,7 @@ const Dashboard = () => {
                                 textAlign: 'center',
                                 cursor: 'pointer',
                                 transition: 'transform 0.2s, box-shadow 0.2s',
-                                boxShadow: selectedStatusType === 'Not Working' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)',
-                                border: selectedStatusType === 'Not Working' ? '3px solid #7f0000' : '3px solid transparent'
+                                boxShadow: selectedStatusType === 'Not Working' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)'
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
                             onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
