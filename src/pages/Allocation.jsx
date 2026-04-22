@@ -26,10 +26,13 @@ const Allocation = () => {
     const [filterItemName, setFilterItemName] = useState('');
     const [filterStock, setFilterStock] = useState('');
 
+    // Sections from Employee Config
+    const [sectionsConfig, setSectionsConfig] = useState([]);
+
     // Modal
     const [showModal, setShowModal] = useState(false);
     const [selectedItem, setSelectedItem] = useState(null);
-    const [allocationForm, setAllocationForm] = useState({ PIN: '', Issued_Date: new Date().toISOString().split('T')[0] });
+    const [allocationForm, setAllocationForm] = useState({ PIN: '', Issued_Date: new Date().toISOString().split('T')[0], Issued_Location: '' });
     const [selectedEmployee, setSelectedEmployee] = useState(null);
 
     // History Modal
@@ -70,6 +73,18 @@ const Allocation = () => {
             setEmployees(empData);
             setInvoices(invData);
             setEwasteItems(allEWasteItems);
+
+            // Fetch sections config separately (error-safe)
+            try {
+                const configRes = await fetch('http://localhost:3001/api/employees/config');
+                const configData = await configRes.json();
+                // configData is an object like { sections: [...], posts: [...], wings: [...], offices: [...] }
+                const sections = (configData && configData.sections) ? configData.sections : [];
+                setSectionsConfig(sections.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))));
+            } catch (e) {
+                console.error('Failed to fetch sections config:', e);
+                setSectionsConfig([]);
+            }
         } catch (error) {
             showAlert('error', 'Failed to fetch data');
         } finally {
@@ -112,7 +127,10 @@ const Allocation = () => {
                         const pinMatch = allocatedStr.toLowerCase().includes(query);
                         const nameMatch = emp?.Name?.toLowerCase().includes(query);
                         const itemMatch = String(h.Item_Name || '').toLowerCase().includes(query);
-                        return edpMatch || pinMatch || nameMatch || itemMatch;
+                        const sectionMatch = emp?.Section?.toLowerCase().includes(query);
+                        const wingMatch = emp?.Wing?.toLowerCase().includes(query);
+                        const locationMatch = String(h.Issued_Location || '').toLowerCase().includes(query);
+                        return edpMatch || pinMatch || nameMatch || itemMatch || sectionMatch || wingMatch || locationMatch;
                     } catch { return false; }
                 });
             }
@@ -125,7 +143,8 @@ const Allocation = () => {
         setSelectedItem(item);
         setAllocationForm({
             PIN: item.Allocated_To === 'STOCK' ? '' : item.Allocated_To,
-            Issued_Date: item.Issued_Date || new Date().toISOString().split('T')[0]
+            Issued_Date: item.Issued_Date || new Date().toISOString().split('T')[0],
+            Issued_Location: item.Issued_Location || ''
         });
         if (item.Allocated_To !== 'STOCK') {
             setSelectedEmployee(employees.find(e => normalize(e.PIN) === normalize(item.Allocated_To)));
@@ -159,6 +178,7 @@ const Allocation = () => {
                     id: selectedItem.id,
                     PIN: allocationForm.PIN || 'STOCK',
                     Issued_Date: allocationForm.Issued_Date,
+                    Issued_Location: allocationForm.Issued_Location || '',
                     changedBy: changedBy // Add username
                 })
             });
@@ -262,10 +282,13 @@ const Allocation = () => {
             const reader = new FileReader();
             reader.onload = async (event) => {
                 try {
+                    const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+                    const changedBy = userProfile.name || 'System';
+
                     const res = await fetch('http://localhost:3001/api/allocation/upload', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fileData: event.target.result })
+                        body: JSON.stringify({ fileData: event.target.result, changedBy })
                     });
                     const result = await res.json();
                     if (res.ok) {
@@ -335,7 +358,7 @@ const Allocation = () => {
                     <input
                         type="text"
                         className="form-input"
-                        placeholder="Search EDP, Name, PIN..."
+                        placeholder="Search EDP, Name, PIN, Section, Wing, Location..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         style={{ flex: 1, minWidth: '180px' }}
@@ -349,15 +372,15 @@ const Allocation = () => {
                     <table className="supplier-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                         <thead>
                             <tr>
-                                <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '90px' }}>Actions</th>
-                                <th style={{ position: 'sticky', left: '90px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #e0e0e0' }}>Item Name</th>
-                                <th style={{ position: 'sticky', left: '210px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #e0e0e0' }}>EDP Serial</th>
+                                <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '90px' }}>Actions</th>
+                                <th style={{ position: 'sticky', left: '90px', zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '120px', borderRight: '2px solid #e0e0e0' }}>Item Name</th>
+                                <th style={{ position: 'sticky', left: '210px', zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '100px', borderRight: '2px solid #e0e0e0' }}>EDP Serial</th>
                                 <th>PIN</th>
                                 <th>Name</th>
                                 <th>Post</th>
-                                <th>Section</th>
                                 <th>Wing</th>
                                 <th>Issued Date</th>
+                                <th>Issued Location</th>
                                 <th>Make</th>
                                 <th>Co. Serial</th>
                                 <th>Bill No</th>
@@ -374,7 +397,7 @@ const Allocation = () => {
                                 const isAllocatedInEWaste = isInEWaste && !isStock;
 
                                 // Status-based row color: E-Waste allocation > Under Repair > Not Working
-                                let rowBg = 'transparent';
+                                let rowBg = '#ffffff';
                                 if (isAllocatedInEWaste) {
                                     rowBg = '#fff3cd';
                                 } else if (h.Status === 'Not Working') {
@@ -393,7 +416,7 @@ const Allocation = () => {
                                         }}
                                         title={isAllocatedInEWaste ? "This item is in E-Waste but still allocated" : "Double-click to view allocation history"}
                                     >
-                                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: '#ffffff' }}>
+                                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: rowBg || '#ffffff' }}>
                                             <div style={{ display: 'flex', gap: '5px' }}>
                                                 <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleOpenModal(h); }} title="Re-allocate">
                                                     <FontAwesomeIcon icon={faUserCheck} />
@@ -403,14 +426,14 @@ const Allocation = () => {
                                                 </button>
                                             </div>
                                         </td>
-                                        <td style={{ position: 'sticky', left: '90px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{h.Item_Name}</td>
-                                        <td style={{ position: 'sticky', left: '210px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}><strong>{h.EDP_Serial}</strong></td>
+                                        <td style={{ position: 'sticky', left: '90px', zIndex: 1, backgroundColor: rowBg || '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{h.Item_Name}</td>
+                                        <td style={{ position: 'sticky', left: '210px', zIndex: 1, backgroundColor: rowBg || '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}><strong>{h.EDP_Serial}</strong></td>
                                         <td>{isStock ? <span className="badge-stock">STOCK</span> : h.Allocated_To}</td>
                                         <td>{emp?.Name || '-'}</td>
                                         <td>{emp?.Present_Post || '-'}</td>
-                                        <td>{emp?.Section || '-'}</td>
                                         <td>{emp?.Wing || '-'}</td>
                                         <td>{formatDate(h.Issued_Date)}</td>
+                                        <td>{h.Issued_Location || '-'}</td>
                                         <td>{h.Make}</td>
                                         <td>{h.Company_Serial}</td>
                                         <td>{h.Bill_Number}</td>
@@ -474,7 +497,7 @@ const Allocation = () => {
                                     <h4 style={{ margin: '0 0 10px 0' }}>Employee Details Found:</h4>
                                     <p><strong>Name:</strong> {selectedEmployee.Name}</p>
                                     <p><strong>Post:</strong> {selectedEmployee.Present_Post}</p>
-                                    <p><strong>Section:</strong> {selectedEmployee.Section}</p>
+                                    <p><strong>Mobile:</strong> {selectedEmployee.Mobile || '-'}</p>
                                     <p><strong>Wing:</strong> {selectedEmployee.Wing}</p>
                                 </div>
                             )}
@@ -490,6 +513,22 @@ const Allocation = () => {
                                 <p style={{ fontSize: '0.8em', color: '#666', marginTop: '5px' }}>
                                     {allocationForm.PIN ? 'Date when device was issued to employee' : 'Date when device was moved to STOCK'}
                                 </p>
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: '15px' }}>
+                                <label>Issued Location</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Search or select location..."
+                                    value={allocationForm.Issued_Location}
+                                    onChange={e => setAllocationForm({ ...allocationForm, Issued_Location: e.target.value })}
+                                    list="sections-list"
+                                />
+                                <datalist id="sections-list">
+                                    {sectionsConfig.map(s => <option key={s} value={s} />)}
+                                </datalist>
+                                <p style={{ fontSize: '0.8em', color: '#666', marginTop: '5px' }}>Sections from Employee Configuration (Manage Options)</p>
                             </div>
                         </div>
                         <div className="modal-footer">
@@ -532,20 +571,39 @@ const Allocation = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {historyData.map(h => {
-                                                const toEmp = employees.find(e => e.PIN === h.to_PIN);
-                                                const fromEmp = employees.find(e => e.PIN === h.from_PIN);
-                                                return (
-                                                    <tr key={h.id}>
-                                                        <td>{h.from_PIN === 'STOCK' ? <span className="badge-stock">STOCK</span> : h.from_PIN}</td>
-                                                        <td>{h.to_PIN === 'STOCK' ? <span className="badge-stock">STOCK</span> : h.to_PIN}</td>
-                                                        <td>{toEmp?.Name || (h.to_PIN === 'STOCK' ? '-' : 'Unknown')}</td>
-                                                        <td>{h.issued_date || '-'}</td>
-                                                        <td>{new Date(h.changed_at).toLocaleString()}</td>
-                                                        <td><strong>{h.changed_by || 'System'}</strong></td>
-                                                    </tr>
-                                                );
-                                            })}
+                                            {[...historyData]
+                                                .sort((a, b) => new Date(b.changed_at) - new Date(a.changed_at))
+                                                .map(h => {
+                                                    const toEmp = employees.find(e => String(e.PIN) === String(h.to_PIN));
+                                                    const fromEmp = employees.find(e => String(e.PIN) === String(h.from_PIN));
+
+                                                    // Format DD-MM-YYYY HH:mm (12hr format)
+                                                    const dt = new Date(h.changed_at);
+                                                    const dd = String(dt.getDate()).padStart(2, '0');
+                                                    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+                                                    const yyyy = dt.getFullYear();
+                                                    const timeStr = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                                                    const formattedDate = `${dd}-${mm}-${yyyy} ${timeStr}`;
+
+                                                    let displayIssuedDate = h.issued_date || '-';
+                                                    if (h.issued_date) {
+                                                        const parts = String(h.issued_date).split('-');
+                                                        if (parts.length === 3 && parts[0].length === 4) {
+                                                            displayIssuedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <tr key={h.id}>
+                                                            <td>{h.from_PIN === 'STOCK' ? <span className="badge-stock">STOCK</span> : h.from_PIN}</td>
+                                                            <td>{h.to_PIN === 'STOCK' ? <span className="badge-stock">STOCK</span> : h.to_PIN}</td>
+                                                            <td>{toEmp?.Name || (h.to_PIN === 'STOCK' ? '-' : 'Unknown')}</td>
+                                                            <td>{displayIssuedDate}</td>
+                                                            <td>{formattedDate}</td>
+                                                            <td><strong>{h.changed_by || 'System'}</strong></td>
+                                                        </tr>
+                                                    );
+                                                })}
                                         </tbody>
                                     </table>
                                 </div>

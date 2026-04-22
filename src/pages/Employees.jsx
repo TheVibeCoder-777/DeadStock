@@ -25,6 +25,10 @@ const Employees = () => {
     const [searchCriteria, setSearchCriteria] = useState('PIN');
     const [searchQuery, setSearchQuery] = useState('');
 
+    // Filters
+    const [filterOffice, setFilterOffice] = useState('');
+    const [filterPost, setFilterPost] = useState('');
+
     // Modal
     const [showModal, setShowModal] = useState(false);
     const [editEmployee, setEditEmployee] = useState(null); // For Add/Edit
@@ -71,20 +75,34 @@ const Employees = () => {
     };
 
     const filteredList = useMemo(() => {
-        if (!searchQuery) return employees;
+        let list = employees;
         try {
-            const query = searchQuery.toLowerCase().trim();
-            return employees.filter(e => {
-                try {
-                    const field = searchCriteria === 'PIN' ? e.PIN : e.Name;
-                    return String(field || '').toLowerCase().includes(query);
-                } catch { return false; }
-            });
+            // Apply dropdown filters
+            if (filterOffice) {
+                list = list.filter(e => String(e.Office || '') === filterOffice);
+            }
+            if (filterPost) {
+                list = list.filter(e => String(e.Present_Post || '') === filterPost);
+            }
+            // Apply search query
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase().trim();
+                list = list.filter(e => {
+                    try {
+                        const fieldMap = { PIN: e.PIN, Name: e.Name, Wing: e.Wing, Mobile: e.Mobile };
+                        const field = fieldMap[searchCriteria] || e.PIN;
+                        return String(field || '').toLowerCase().includes(query);
+                    } catch { return false; }
+                });
+            }
+            return list;
         } catch { return employees; }
-    }, [searchQuery, searchCriteria, employees]);
+    }, [searchQuery, searchCriteria, employees, filterOffice, filterPost]);
 
     const handleClearSearch = () => {
         setSearchQuery('');
+        setFilterOffice('');
+        setFilterPost('');
     };
 
     const handleOpenModal = (employee = null) => {
@@ -225,9 +243,19 @@ const Employees = () => {
                 </div>
 
                 <div className="search-bar">
-                    <select className="form-select" value={searchCriteria} onChange={e => setSearchCriteria(e.target.value)}>
+                    <select className="form-select" style={{ width: 'auto', minWidth: '120px' }} value={filterOffice} onChange={e => setFilterOffice(e.target.value)}>
+                        <option value="">All Offices</option>
+                        {(config.offices || []).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    <select className="form-select" style={{ width: 'auto', minWidth: '120px' }} value={filterPost} onChange={e => setFilterPost(e.target.value)}>
+                        <option value="">All Posts</option>
+                        {(config.posts || []).map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select className="form-select" style={{ width: 'auto', minWidth: '80px' }} value={searchCriteria} onChange={e => setSearchCriteria(e.target.value)}>
                         <option value="PIN">PIN</option>
                         <option value="Name">Employee Name</option>
+                        <option value="Wing">Wing</option>
+                        <option value="Mobile">Mobile</option>
                     </select>
                     <input
                         type="text"
@@ -235,6 +263,7 @@ const Employees = () => {
                         placeholder="Search..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
+                        style={{ width: '200px' }}
                     />
                     <button className="btn btn-outline" onClick={handleClearSearch}><FontAwesomeIcon icon={faTimes} /> Clear</button>
                 </div>
@@ -245,10 +274,10 @@ const Employees = () => {
                     <table className="supplier-table">
                         <thead>
                             <tr>
-                                <th>PIN</th>
+                                <th style={{ position: 'sticky', left: 0, zIndex: 101, background: 'linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%)', minWidth: '80px' }}>Actions</th>
+                                <th style={{ position: 'sticky', left: '80px', zIndex: 101, background: 'linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%)' }}>PIN</th>
                                 <th>Name</th>
                                 <th>Present Post</th>
-                                <th>Section</th>
                                 <th>Wing</th>
                                 <th>Office</th>
                                 <th>Email</th>
@@ -256,16 +285,20 @@ const Employees = () => {
                                 <th>Hqr/Field</th>
                                 <th>DOB</th>
                                 <th>Retirement</th>
-                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredList.map(emp => (
                                 <tr key={emp.id || `${emp.PIN}-${emp.Name}`}>
-                                    <td><strong>{emp.PIN}</strong></td>
+                                    <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: '#ffffff', minWidth: '80px' }}>
+                                        <div className="action-buttons">
+                                            <button className="btn-icon edit" onClick={() => handleOpenModal(emp)}><FontAwesomeIcon icon={faEdit} /></button>
+                                            <button className="btn-icon delete" onClick={() => handleDelete(emp.PIN)}><FontAwesomeIcon icon={faTrash} /></button>
+                                        </div>
+                                    </td>
+                                    <td style={{ position: 'sticky', left: '80px', zIndex: 1, backgroundColor: '#ffffff' }}><strong>{emp.PIN}</strong></td>
                                     <td>{emp.Name}</td>
                                     <td>{emp.Present_Post}</td>
-                                    <td>{emp.Section || '-'}</td>
                                     <td>{emp.Wing}</td>
                                     <td>{emp.Office}</td>
                                     <td>{emp.Email || '-'}</td>
@@ -273,12 +306,6 @@ const Employees = () => {
                                     <td>{emp.Hqr_Field || '-'}</td>
                                     <td>{formatDate(emp.DOB)}</td>
                                     <td>{formatDate(emp.Retirement_Date)}</td>
-                                    <td>
-                                        <div className="action-buttons">
-                                            <button className="btn-icon edit" onClick={() => handleOpenModal(emp)}><FontAwesomeIcon icon={faEdit} /></button>
-                                            <button className="btn-icon delete" onClick={() => handleDelete(emp.PIN)}><FontAwesomeIcon icon={faTrash} /></button>
-                                        </div>
-                                    </td>
                                 </tr>
                             ))}
                         </tbody>

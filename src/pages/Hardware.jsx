@@ -37,9 +37,21 @@ const Hardware = () => {
     const [selectedIds, setSelectedIds] = useState([]);
     const [showBulkAMCModal, setShowBulkAMCModal] = useState(false);
     const [bulkAMCData, setBulkAMCData] = useState({ AMC: 'Yes', AMC_Upto: '' });
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+    // EDP Serial Confirmation
+    const [showSerialConfirm, setShowSerialConfirm] = useState(false);
+    const [proposedSerial, setProposedSerial] = useState('');
+    const [serialOverride, setSerialOverride] = useState('');
+    const [pendingItems, setPendingItems] = useState(null);
 
     // Make dropdown config
     const [makeOptions, setMakeOptions] = useState([]);
+
+    // Capacity dropdown config
+    const [capacityConfig, setCapacityConfig] = useState([]);
+    const [columnVisibilityConfig, setColumnVisibilityConfig] = useState({});
 
     // Capacity label mapping based on category
     const getCapacityLabel = (category) => {
@@ -59,10 +71,68 @@ const Hardware = () => {
 
     const capacityLabel = getCapacityLabel(urlCategory);
 
+    // --- IP Address Masking ---
+    const formatIP = (value) => {
+        // Strip non-numeric and non-dot chars
+        let cleaned = value.replace(/[^0-9.]/g, '');
+        // Split into octets
+        let parts = cleaned.split('.');
+        // Limit to 4 octets
+        parts = parts.slice(0, 4);
+        // Clamp each octet to 0-255 and limit to 3 digits
+        parts = parts.map(p => {
+            if (p === '') return '';
+            const num = parseInt(p.slice(0, 3), 10);
+            if (isNaN(num)) return '';
+            return Math.min(num, 255).toString();
+        });
+        return parts.join('.');
+    };
+
+    const isValidIP = (value) => {
+        if (!value) return true; // empty is OK
+        const parts = value.split('.');
+        if (parts.length !== 4) return false;
+        return parts.every(p => {
+            const num = parseInt(p, 10);
+            return !isNaN(num) && num >= 0 && num <= 255 && p !== '';
+        });
+    };
+
+    // --- MAC Address Masking ---
+    const formatMAC = (value) => {
+        // Strip everything except hex chars
+        let hex = value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+        // Limit to 12 hex chars
+        hex = hex.slice(0, 12);
+        // Insert colons every 2 chars
+        let parts = [];
+        for (let i = 0; i < hex.length; i += 2) {
+            parts.push(hex.slice(i, i + 2));
+        }
+        return parts.join(':');
+    };
+
+    const isValidMAC = (value) => {
+        if (!value) return true; // empty is OK
+        return /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(value);
+    };
+
+    // --- Column visibility per category (from server config) ---
+    const hiddenCols = columnVisibilityConfig[urlCategory] || [];
+    const colVisible = (col) => !hiddenCols.includes(col);
+
+    // Capacity options filtered by current category
+    const capacityOptions = capacityConfig
+        .filter(c => c.Item_Name === urlCategory)
+        .map(c => c.Capacity);
+
     useEffect(() => {
         fetchHardware();
         fetchInvoices();
         fetchMakeOptions();
+        fetchCapacityConfig();
+        fetchColumnVisibility();
     }, [urlCategory]);
 
     // --- API Calls ---
@@ -86,6 +156,26 @@ const Hardware = () => {
             setInvoices(data);
         } catch (error) {
             console.error(error);
+        }
+    };
+
+    const fetchCapacityConfig = async () => {
+        try {
+            const res = await fetch('http://localhost:3001/api/capacity/config');
+            const data = await res.json();
+            setCapacityConfig(data);
+        } catch (error) {
+            console.error('Failed to fetch capacity config:', error);
+        }
+    };
+
+    const fetchColumnVisibility = async () => {
+        try {
+            const res = await fetch('http://localhost:3001/api/column-visibility/config');
+            const data = await res.json();
+            setColumnVisibilityConfig(data);
+        } catch (error) {
+            console.error('Failed to fetch column visibility:', error);
         }
     };
 
@@ -139,6 +229,13 @@ const Hardware = () => {
         setSelectedInvoiceItem(null); // Reset item selection
     };
 
+    // Helper: look up purchase date from invoices by Bill Number
+    const getPurchasedDate = (billNo) => {
+        if (!billNo) return '-';
+        const inv = invoices.find(i => String(i.Bill_Number) === String(billNo));
+        return inv ? formatDate(inv.Date) : '-';
+    };
+
     const handleStep1Next = () => {
         if (!selectedInvoice) return showAlert('error', 'Select a Bill first');
         setWizardStep(2);
@@ -153,54 +250,67 @@ const Hardware = () => {
         if (newItemCommonData.AMC === 'Yes' && !newItemCommonData.AMC_Upto) {
             return showAlert('error', 'Please enter AMC Upto date');
         }
+
+        // Build items first
+        const qty = parseInt(selectedInvoiceItem.Quantity, 10);
+        const itemsToCreate = [];
+        for (let i = 0; i < qty; i++) {
+            itemsToCreate.push({
+                Category: urlCategory,
+                Item_Name: selectedInvoiceItem.Hardware_Item,
+                Bill_Number: selectedInvoice.Bill_Number,
+                Cost: newItemCommonData.Cost || '0',
+                AMC: newItemCommonData.AMC,
+                AMC_Upto: newItemCommonData.AMC_Upto,
+                Warranty_Upto: selectedInvoiceItem.Warranty_Upto || '',
+                Additional_Item: newItemCommonData.Additional_Item,
+                Status: newItemCommonData.Status,
+                Remarks: newItemCommonData.Remarks,
+                Make: newItemCommonData.Make,
+                Capacity: newItemCommonData.Capacity,
+                RAM: newItemCommonData.RAM,
+                OS: newItemCommonData.OS,
+                Office: newItemCommonData.Office,
+                Speed: newItemCommonData.Speed,
+                IP: newItemCommonData.IP,
+                MAC: newItemCommonData.MAC,
+                Company_Serial: newItemCommonData.Company_Serial,
+            });
+        }
+
+        // Fetch proposed serial from server and show confirmation popup
+        try {
+            const previewRes = await fetch(`http://localhost:3001/api/hardware/next-serial?category=${encodeURIComponent(urlCategory)}`);
+            const previewData = await previewRes.json();
+            setProposedSerial(previewData.proposedSerial || '');
+            setSerialOverride(previewData.proposedSerial || '');
+            setPendingItems(itemsToCreate);
+            setShowSerialConfirm(true);
+        } catch (error) {
+            showAlert('error', 'Error fetching serial preview');
+        }
+    };
+
+    const handleConfirmAndSave = async () => {
+        if (!pendingItems) return;
+        setShowSerialConfirm(false);
         setProcessing(true);
         try {
-            // Prepare items
-            // Quantity comes from selectedInvoiceItem.Quantity (which is string or number)
-            const qty = parseInt(selectedInvoiceItem.Quantity, 10);
-            const itemsToCreate = [];
-
-            for (let i = 0; i < qty; i++) {
-                itemsToCreate.push({
-                    Category: urlCategory,
-                    Item_Name: selectedInvoiceItem.Hardware_Item, // E.g. "LAPTOP"
-                    Bill_Number: selectedInvoice.Bill_Number,
-                    // Prompt says "Cost (Rs.) - INR Cost of that Assets". 
-                    // Use total invoice amount for now or leave user to edit. Let's use 0 or user edit?
-                    // Better: Invoice Amount is Total. We probably don't know unit cost unless calculated.
-                    // Let's pass 0 and let user edit, or pass Invoice Amount.
-                    // Actually, if prompted, maybe unit cost? Let's leave Cost blank or "0".
-                    Cost: newItemCommonData.Cost || '0',
-                    AMC: newItemCommonData.AMC,
-                    AMC_Upto: newItemCommonData.AMC_Upto,
-                    Warranty_Upto: selectedInvoiceItem.Warranty_Upto || '',
-                    Additional_Item: newItemCommonData.Additional_Item,
-                    Status: newItemCommonData.Status,
-                    Remarks: newItemCommonData.Remarks,
-                    Make: newItemCommonData.Make,
-                    Capacity: newItemCommonData.Capacity,
-                    RAM: newItemCommonData.RAM,
-                    OS: newItemCommonData.OS,
-                    Office: newItemCommonData.Office,
-                    Speed: newItemCommonData.Speed,
-                    IP: newItemCommonData.IP,
-                    MAC: newItemCommonData.MAC,
-                    Company_Serial: newItemCommonData.Company_Serial, // Checking if this should be unique per row? usually yes.
-                    // If bulk adding, Company Serial matches? No, usually distinct. 
-                    // The wizard asks for "Repeating data at once". 
-                    // So we construct identical objects, and user edits unique fields later via Inline Edit.
-                });
-            }
+            // Only attach the override to the FIRST item; server will auto-increment for the rest
+            const itemsToSend = pendingItems.map((item, idx) => ({
+                ...item,
+                ...(idx === 0 && serialOverride && serialOverride !== proposedSerial ? { EDP_Serial_Override: serialOverride } : {})
+            }));
 
             const res = await fetch('http://localhost:3001/api/hardware', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(itemsToCreate)
+                body: JSON.stringify(itemsToSend)
             });
 
             if (res.ok) {
                 const result = await res.json();
-                showAlert('success', `${result.generatedItems.length} Items Added`);
+                showAlert('success', `${result.generatedItems.length} Items Added (Starting EDP: ${result.generatedItems[0]?.EDP_Serial})`);
                 handleCloseModal();
                 fetchHardware();
             } else {
@@ -210,6 +320,7 @@ const Hardware = () => {
             showAlert('error', 'Error saving hardware');
         } finally {
             setProcessing(false);
+            setPendingItems(null);
         }
     };
 
@@ -291,7 +402,6 @@ const Hardware = () => {
     };
 
     const handleBulkDelete = async () => {
-        if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} items?`)) return;
         setProcessing(true);
         try {
             const res = await fetch('http://localhost:3001/api/hardware/bulk-delete', {
@@ -308,6 +418,8 @@ const Hardware = () => {
             showAlert('error', 'Bulk delete failed');
         } finally {
             setProcessing(false);
+            setShowDeleteConfirm(false);
+            setDeleteConfirmText('');
         }
     };
 
@@ -548,20 +660,21 @@ const Hardware = () => {
                 <table className="supplier-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                     <thead>
                         <tr>
-                            <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '40px' }}><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length === filteredList.length && filteredList.length > 0} /></th>
-                            <th style={{ position: 'sticky', left: '40px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '90px' }}>Actions</th>
-                            <th style={{ position: 'sticky', left: '130px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '120px', borderRight: '2px solid #e0e0e0' }}>Item Name</th>
-                            <th style={{ position: 'sticky', left: '250px', zIndex: 3, backgroundColor: '#1a1a2e', minWidth: '100px', borderRight: '2px solid #e0e0e0' }}>EDP Serial</th>
+                            <th style={{ position: 'sticky', left: 0, zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '40px' }}><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length === filteredList.length && filteredList.length > 0} /></th>
+                            <th style={{ position: 'sticky', left: '40px', zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '90px' }}>Actions</th>
+                            <th style={{ position: 'sticky', left: '130px', zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '120px', borderRight: '2px solid #e0e0e0' }}>Item Name</th>
+                            <th style={{ position: 'sticky', left: '250px', zIndex: 3, backgroundColor: '#1a1a2e', color: '#fff', minWidth: '100px', borderRight: '2px solid #e0e0e0' }}>EDP Serial</th>
                             <th>Make</th>
                             <th>{capacityLabel}</th>
-                            <th>RAM</th>
-                            <th>OS</th>
-                            <th>Office</th>
-                            <th>Speed</th>
-                            <th>IP</th>
-                            <th>MAC</th>
+                            {colVisible('RAM') && <th>RAM</th>}
+                            {colVisible('OS') && <th>OS</th>}
+                            {colVisible('Office') && <th>Office</th>}
+                            {colVisible('Speed') && <th>Speed</th>}
+                            {colVisible('IP') && <th>IP</th>}
+                            {colVisible('MAC') && <th>MAC</th>}
                             <th>Comp Serial</th>
                             <th>Bill No</th>
+                            <th>Purchased</th>
                             <th>Cost</th>
                             <th>AMC</th>
                             <th>AMC Upto</th>
@@ -574,31 +687,36 @@ const Hardware = () => {
                     <tbody>
                         {filteredList.map(item => (
                             <tr key={item.id} className={getRowClass(item.Status)} style={getRowClass(item.Status) === 'row-red' ? { backgroundColor: '#ffebeb' } : (getRowClass(item.Status) === 'row-orange' ? { backgroundColor: '#fff3e0' } : {})}>
-                                <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: '#ffffff', textAlign: 'center' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedIds.includes(item.id)}
-                                        onChange={() => toggleSelect(item.id)}
-                                    />
-                                </td>
-                                <td style={{ position: 'sticky', left: '40px', zIndex: 1, backgroundColor: '#ffffff' }}>
-                                    <div className="action-buttons">
-                                        <button className="btn-icon edit" onClick={() => startEdit(item)}><FontAwesomeIcon icon={faEdit} /></button>
-                                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><FontAwesomeIcon icon={faTrash} /></button>
-                                    </div>
-                                </td>
-                                <td style={{ position: 'sticky', left: '130px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.Item_Name}</td>
-                                <td style={{ position: 'sticky', left: '250px', zIndex: 1, backgroundColor: '#ffffff', borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.EDP_Serial}</td>
+                                {(() => {
+                                    const stickyBg = item.Status === 'Not Working' ? '#ffebeb' : item.Status === 'Under Repair' ? '#fff3e0' : '#ffffff'; return (<>
+                                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: stickyBg, textAlign: 'center' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.includes(item.id)}
+                                                onChange={() => toggleSelect(item.id)}
+                                            />
+                                        </td>
+                                        <td style={{ position: 'sticky', left: '40px', zIndex: 1, backgroundColor: stickyBg }}>
+                                            <div className="action-buttons">
+                                                <button className="btn-icon edit" onClick={() => startEdit(item)}><FontAwesomeIcon icon={faEdit} /></button>
+                                                <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><FontAwesomeIcon icon={faTrash} /></button>
+                                            </div>
+                                        </td>
+                                        <td style={{ position: 'sticky', left: '130px', zIndex: 1, backgroundColor: stickyBg, borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.Item_Name}</td>
+                                        <td style={{ position: 'sticky', left: '250px', zIndex: 1, backgroundColor: stickyBg, borderRight: '2px solid #e0e0e0', fontWeight: 600 }}>{item.EDP_Serial}</td>
+                                    </>);
+                                })()}
                                 <td>{item.Make}</td>
                                 <td>{item.Capacity}</td>
-                                <td>{item.RAM}</td>
-                                <td>{item.OS}</td>
-                                <td>{item.Office}</td>
-                                <td>{item.Speed}</td>
-                                <td>{item.IP}</td>
-                                <td>{item.MAC}</td>
+                                {colVisible('RAM') && <td>{item.RAM}</td>}
+                                {colVisible('OS') && <td>{item.OS}</td>}
+                                {colVisible('Office') && <td>{item.Office}</td>}
+                                {colVisible('Speed') && <td>{item.Speed}</td>}
+                                {colVisible('IP') && <td>{item.IP}</td>}
+                                {colVisible('MAC') && <td>{item.MAC}</td>}
                                 <td>{item.Company_Serial}</td>
                                 <td>{item.Bill_Number}</td>
+                                <td>{getPurchasedDate(item.Bill_Number)}</td>
                                 <td>{item.Cost}</td>
                                 <td>{item.AMC}</td>
                                 <td>{item.AMC === 'Yes' ? formatDate(item.AMC_Upto) : '-'}</td>
@@ -640,36 +758,54 @@ const Hardware = () => {
                                 </div>
                                 <div className="form-group">
                                     <label>{capacityLabel}</label>
-                                    <input type="text" className="form-input" placeholder={capacityLabel} value={editFormData.Capacity || ''} onChange={e => setEditFormData({ ...editFormData, Capacity: e.target.value })} />
+                                    {capacityOptions.length > 0 ? (
+                                        <select className="form-select" value={editFormData.Capacity || ''} onChange={e => setEditFormData({ ...editFormData, Capacity: e.target.value })}>
+                                            <option value="">Select {capacityLabel}</option>
+                                            {capacityOptions.map(cap => <option key={cap} value={cap}>{cap}</option>)}
+                                            {editFormData.Capacity && !capacityOptions.includes(editFormData.Capacity) && (
+                                                <option value={editFormData.Capacity}>{editFormData.Capacity} (current)</option>
+                                            )}
+                                        </select>
+                                    ) : (
+                                        <input type="text" className="form-input" placeholder={capacityLabel} value={editFormData.Capacity || ''} onChange={e => setEditFormData({ ...editFormData, Capacity: e.target.value })} />
+                                    )}
                                 </div>
-                                <div className="form-group">
+                                {colVisible('RAM') && <div className="form-group">
                                     <label>RAM</label>
                                     <input type="text" className="form-input" value={editFormData.RAM || ''} onChange={e => setEditFormData({ ...editFormData, RAM: e.target.value })} />
-                                </div>
+                                </div>}
                             </div>
                             <div className="form-row">
-                                <div className="form-group">
+                                {colVisible('OS') && <div className="form-group">
                                     <label>OS</label>
                                     <input type="text" className="form-input" value={editFormData.OS || ''} onChange={e => setEditFormData({ ...editFormData, OS: e.target.value })} />
-                                </div>
-                                <div className="form-group">
+                                </div>}
+                                {colVisible('Office') && <div className="form-group">
                                     <label>Office</label>
                                     <input type="text" className="form-input" value={editFormData.Office || ''} onChange={e => setEditFormData({ ...editFormData, Office: e.target.value })} />
-                                </div>
-                                <div className="form-group">
+                                </div>}
+                                {colVisible('Speed') && <div className="form-group">
                                     <label>Speed</label>
                                     <input type="text" className="form-input" value={editFormData.Speed || ''} onChange={e => setEditFormData({ ...editFormData, Speed: e.target.value })} />
-                                </div>
+                                </div>}
                             </div>
                             <div className="form-row">
-                                <div className="form-group">
-                                    <label>IP</label>
-                                    <input type="text" className="form-input" value={editFormData.IP || ''} onChange={e => setEditFormData({ ...editFormData, IP: e.target.value })} />
-                                </div>
-                                <div className="form-group">
-                                    <label>MAC</label>
-                                    <input type="text" className="form-input" value={editFormData.MAC || ''} onChange={e => setEditFormData({ ...editFormData, MAC: e.target.value })} />
-                                </div>
+                                {colVisible('IP') && <div className="form-group">
+                                    <label>IP Address</label>
+                                    <input type="text" className="form-input" placeholder="192.168.1.1" value={editFormData.IP || ''}
+                                        onChange={e => setEditFormData({ ...editFormData, IP: formatIP(e.target.value) })}
+                                        style={editFormData.IP && !isValidIP(editFormData.IP) ? { borderColor: '#dc3545' } : {}}
+                                    />
+                                    {editFormData.IP && !isValidIP(editFormData.IP) && <small style={{ color: '#dc3545' }}>Invalid IP (e.g. 192.168.1.1)</small>}
+                                </div>}
+                                {colVisible('MAC') && <div className="form-group">
+                                    <label>MAC Address</label>
+                                    <input type="text" className="form-input" placeholder="AA:BB:CC:DD:EE:FF" value={editFormData.MAC || ''}
+                                        onChange={e => setEditFormData({ ...editFormData, MAC: formatMAC(e.target.value) })}
+                                        style={editFormData.MAC && !isValidMAC(editFormData.MAC) ? { borderColor: '#dc3545' } : {}}
+                                    />
+                                    {editFormData.MAC && !isValidMAC(editFormData.MAC) && <small style={{ color: '#dc3545' }}>Invalid MAC (e.g. AA:BB:CC:DD:EE:FF)</small>}
+                                </div>}
                                 <div className="form-group">
                                     <label>Company Serial</label>
                                     <input type="text" className="form-input" value={editFormData.Company_Serial || ''} onChange={e => setEditFormData({ ...editFormData, Company_Serial: e.target.value })} />
@@ -808,13 +944,18 @@ const Hardware = () => {
                                                 {makeOptions.map(make => <option key={make} value={make}>{make}</option>)}
                                             </select>
                                         </div>
-                                        <div className="form-group"><label>{capacityLabel}</label><input type="text" className="form-input" placeholder={capacityLabel} value={newItemCommonData.Capacity} onChange={e => setNewItemCommonData({ ...newItemCommonData, Capacity: e.target.value })} /></div>
-                                        <div className="form-group"><label>RAM</label><input type="text" className="form-input" value={newItemCommonData.RAM} onChange={e => setNewItemCommonData({ ...newItemCommonData, RAM: e.target.value })} /></div>
+                                        <div className="form-group"><label>{capacityLabel}</label>{capacityOptions.length > 0 ? (<select className="form-select" value={newItemCommonData.Capacity} onChange={e => setNewItemCommonData({ ...newItemCommonData, Capacity: e.target.value })}><option value="">Select {capacityLabel}</option>{capacityOptions.map(cap => <option key={cap} value={cap}>{cap}</option>)}</select>) : (<input type="text" className="form-input" placeholder={capacityLabel} value={newItemCommonData.Capacity} onChange={e => setNewItemCommonData({ ...newItemCommonData, Capacity: e.target.value })} />)}</div>
+                                        {colVisible('RAM') && <div className="form-group"><label>RAM</label><input type="text" className="form-input" value={newItemCommonData.RAM} onChange={e => setNewItemCommonData({ ...newItemCommonData, RAM: e.target.value })} /></div>}
                                     </div>
                                     <div className="form-row">
-                                        <div className="form-group"><label>OS</label><input type="text" className="form-input" value={newItemCommonData.OS} onChange={e => setNewItemCommonData({ ...newItemCommonData, OS: e.target.value })} /></div>
-                                        <div className="form-group"><label>Office</label><input type="text" className="form-input" value={newItemCommonData.Office} onChange={e => setNewItemCommonData({ ...newItemCommonData, Office: e.target.value })} /></div>
-                                        <div className="form-group"><label>Speed</label><input type="text" className="form-input" value={newItemCommonData.Speed} onChange={e => setNewItemCommonData({ ...newItemCommonData, Speed: e.target.value })} /></div>
+                                        {colVisible('OS') && <div className="form-group"><label>OS</label><input type="text" className="form-input" value={newItemCommonData.OS} onChange={e => setNewItemCommonData({ ...newItemCommonData, OS: e.target.value })} /></div>}
+                                        {colVisible('Office') && <div className="form-group"><label>Office</label><input type="text" className="form-input" value={newItemCommonData.Office} onChange={e => setNewItemCommonData({ ...newItemCommonData, Office: e.target.value })} /></div>}
+                                        {colVisible('Speed') && <div className="form-group"><label>Speed</label><input type="text" className="form-input" value={newItemCommonData.Speed} onChange={e => setNewItemCommonData({ ...newItemCommonData, Speed: e.target.value })} /></div>}
+                                    </div>
+                                    <div className="form-row">
+                                        {colVisible('IP') && <div className="form-group"><label>IP Address</label><input type="text" className="form-input" placeholder="192.168.1.1" value={newItemCommonData.IP} onChange={e => setNewItemCommonData({ ...newItemCommonData, IP: formatIP(e.target.value) })} style={newItemCommonData.IP && !isValidIP(newItemCommonData.IP) ? { borderColor: '#dc3545' } : {}} />{newItemCommonData.IP && !isValidIP(newItemCommonData.IP) && <small style={{ color: '#dc3545' }}>Invalid IP</small>}</div>}
+                                        {colVisible('MAC') && <div className="form-group"><label>MAC Address</label><input type="text" className="form-input" placeholder="AA:BB:CC:DD:EE:FF" value={newItemCommonData.MAC} onChange={e => setNewItemCommonData({ ...newItemCommonData, MAC: formatMAC(e.target.value) })} style={newItemCommonData.MAC && !isValidMAC(newItemCommonData.MAC) ? { borderColor: '#dc3545' } : {}} />{newItemCommonData.MAC && !isValidMAC(newItemCommonData.MAC) && <small style={{ color: '#dc3545' }}>Invalid MAC</small>}</div>}
+                                        <div className="form-group"><label>Company Serial</label><input type="text" className="form-input" value={newItemCommonData.Company_Serial} onChange={e => setNewItemCommonData({ ...newItemCommonData, Company_Serial: e.target.value })} /></div>
                                     </div>
                                     <div className="form-row">
                                         <div className="form-group"><label>Cost (Rs.)</label><input type="number" className="form-input" value={newItemCommonData.Cost} onChange={e => setNewItemCommonData({ ...newItemCommonData, Cost: e.target.value })} /></div>
@@ -856,16 +997,86 @@ const Hardware = () => {
                 <div className="bulk-action-bar" style={{
                     position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
                     backgroundColor: '#333', color: 'white', padding: '15px 30px', borderRadius: '50px',
-                    display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zindex: 1001
+                    display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1001
                 }}>
                     <span><strong>{selectedIds.length}</strong> items selected</span>
-                    <button className="btn btn-small" style={{ backgroundColor: '#ff4d4d' }} onClick={handleBulkDelete}>
+                    <button className="btn btn-small" style={{ backgroundColor: '#ff4d4d' }} onClick={() => { setDeleteConfirmText(''); setShowDeleteConfirm(true); }}>
                         <FontAwesomeIcon icon={faTrash} /> Bulk Delete
                     </button>
                     <button className="btn btn-small" style={{ backgroundColor: '#ffd700', color: '#000' }} onClick={() => setShowBulkAMCModal(true)}>
                         Bulk Update AMC
                     </button>
                     <button className="btn-icon" style={{ color: 'white' }} onClick={() => setSelectedIds([])}><FontAwesomeIcon icon={faTimes} /></button>
+                </div>
+            )}
+
+            {/* EDP Serial Confirmation Popup */}
+            {showSerialConfirm && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ width: '500px' }}>
+                        <div className="modal-header"><h3 style={{ color: '#008080' }}>📋 Verify EDP Serial Number</h3></div>
+                        <div className="modal-body">
+                            <p style={{ marginBottom: '10px' }}>The system has proposed the following starting EDP Serial Number for the new item(s):</p>
+                            <div style={{ textAlign: 'center', margin: '20px 0', padding: '15px', background: '#f0f9f9', borderRadius: '8px', border: '2px solid #008080' }}>
+                                <span style={{ fontSize: '1.8em', fontWeight: 'bold', color: '#008080', letterSpacing: '3px' }}>{proposedSerial}</span>
+                            </div>
+                            <p style={{ marginBottom: '10px', color: '#666' }}>If this is <strong>not correct</strong>, please type the correct starting serial number below:</p>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder={`e.g. ${proposedSerial}`}
+                                value={serialOverride}
+                                onChange={e => setSerialOverride(e.target.value.toUpperCase())}
+                                style={{ textAlign: 'center', fontSize: '1.2em', letterSpacing: '2px', fontWeight: 'bold' }}
+                            />
+                            <p style={{ marginTop: '10px', fontSize: '0.85em', color: '#999' }}>
+                                ⚠ Please double-check the last used serial in the list to avoid duplicates or skipped numbers.
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => { setShowSerialConfirm(false); setPendingItems(null); }}>Cancel</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleConfirmAndSave}
+                                disabled={!serialOverride}
+                            >
+                                ✓ Confirm & Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ width: '450px' }}>
+                        <div className="modal-header"><h3 style={{ color: '#ff4d4d' }}>⚠ Confirm Bulk Delete</h3></div>
+                        <div className="modal-body">
+                            <p style={{ marginBottom: '10px' }}>You are about to permanently delete <strong>{selectedIds.length}</strong> hardware item(s).</p>
+                            <p style={{ marginBottom: '15px', color: '#999' }}>This action cannot be undone. To confirm, type <strong style={{ color: '#ff4d4d' }}>DELETE</strong> below:</p>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="Type DELETE to confirm"
+                                value={deleteConfirmText}
+                                onChange={e => setDeleteConfirmText(e.target.value)}
+                                autoFocus
+                                style={{ textAlign: 'center', fontSize: '1.1em', letterSpacing: '2px' }}
+                            />
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}>Cancel</button>
+                            <button
+                                className="btn"
+                                style={{ backgroundColor: deleteConfirmText === 'DELETE' ? '#ff4d4d' : '#ccc', color: 'white' }}
+                                disabled={deleteConfirmText !== 'DELETE'}
+                                onClick={handleBulkDelete}
+                            >
+                                Delete {selectedIds.length} Items
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

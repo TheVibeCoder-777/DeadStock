@@ -2,6 +2,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
+import fs from 'fs';
+import lockfile from 'proper-lockfile';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -65,6 +67,38 @@ export async function initDatabase(filePath = null) {
 
   const adapter = new JSONFile(dbPath);
   db = new Low(adapter, defaultSchema);
+
+  // --- Network File Locking for Concurrency ---
+  const originalRead = db.read.bind(db);
+  const originalWrite = db.write.bind(db);
+
+  const lockOptions = {
+    retries: { retries: 15, minTimeout: 100, maxTimeout: 1500 }
+  };
+
+  db.read = async () => {
+    let release;
+    try {
+      if (fs.existsSync(currentDbPath)) {
+        release = await lockfile.lock(currentDbPath, lockOptions);
+      }
+      await originalRead();
+    } finally {
+      if (release) await release();
+    }
+  };
+
+  db.write = async () => {
+    let release;
+    try {
+      if (fs.existsSync(currentDbPath)) {
+        release = await lockfile.lock(currentDbPath, lockOptions);
+      }
+      await originalWrite();
+    } finally {
+      if (release) await release();
+    }
+  };
 
   try {
     await db.read();
