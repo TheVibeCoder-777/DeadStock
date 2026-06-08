@@ -1,7 +1,7 @@
 {
   "name": "deadstock",
   "productName": "DeadStock",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "Inventory Management System - Hardware and Software Tracking",
   "author": "DeadStock Team",
   "main": "electron/main.cjs",
@@ -21,6 +21,8 @@
     "@fortawesome/fontawesome-svg-core": "^7.1.0",
     "@fortawesome/free-solid-svg-icons": "^7.1.0",
     "@fortawesome/react-fontawesome": "^3.1.1",
+    "better-sqlite3": "^12.8.0",
+    "proper-lockfile": "^4.1.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.11.0"

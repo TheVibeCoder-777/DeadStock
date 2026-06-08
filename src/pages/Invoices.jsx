@@ -15,42 +15,27 @@ const Invoices = () => {
     const [searchCriteria, setSearchCriteria] = useState('Supplier Name');
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Pagination (Basic)
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 25;
-
     // Expanded Rows (Set of IDs)
     const [expandedRowIds, setExpandedRowIds] = useState(new Set());
 
-    // Inline Edit (Master)
-    const [editRowId, setEditRowId] = useState(null);
-    const [editFormData, setEditFormData] = useState({});
-    const [editFile, setEditFile] = useState(null);
-
-    // Item Management State
-    const [addingItemToInvoiceId, setAddingItemToInvoiceId] = useState(null); // ID of invoice where we are adding an item
-    const [newItemForList, setNewItemForList] = useState({ // Form data for adding item to list
-        Hardware_Item: '', Quantity: 1, Warranty: '', Warranty_Upto: '', Item_Details: '', OEM_Software: ''
-    });
-
-    // Inline Edit (Item)
-    const [editingItemKey, setEditingItemKey] = useState(null); // Composite key: `${invoiceId}-${itemIndex}`
-    const [editItemFormData, setEditItemFormData] = useState({});
-
-    // Modal State (New Invoice)
+    // Modal State (Add / Edit Invoice)
     const [showModal, setShowModal] = useState(false);
-    const [newInvoice, setNewInvoice] = useState({
+    const [editingInvoiceId, setEditingInvoiceId] = useState(null); // null = Add, id = Edit
+    const [modalInvoice, setModalInvoice] = useState({
         Bill_Number: '', Firm_Name: '', Date: '', Amount: '', Category: 'Hardware', Items: []
     });
+    const [selectedFile, setSelectedFile] = useState(null);
 
     // New Item State (within Modal)
-    const [newItem, setNewItem] = useState({ // Form data for Modal
+    const [newItem, setNewItem] = useState({
         Hardware_Item: '', Quantity: 1, Warranty: '', Warranty_Upto: '', Item_Details: '', OEM_Software: ''
     });
 
-    const fileInputRef = useRef(null); // For Master Excel Upload (if needed later)
-    const bulkUploadRef = useRef(null); // For Bulk Invoice Upload
-    const [selectedFile, setSelectedFile] = useState(null); // For New Invoice PDF
+    // Edit item within modal
+    const [editingModalItemIdx, setEditingModalItemIdx] = useState(null);
+    const [editModalItemData, setEditModalItemData] = useState({});
+
+    const bulkUploadRef = useRef(null);
 
     // Options
     const [hardwareOptions, setHardwareOptions] = useState([]);
@@ -101,10 +86,42 @@ const Invoices = () => {
         reader.onerror = error => reject(error);
     });
 
-    // --- Master Invoice Actions ---
-    const handleCreateInvoice = async () => {
-        if (!newInvoice.Bill_Number || !newInvoice.Firm_Name || !newInvoice.Date || !newInvoice.Amount) {
-            showAlert('error', 'Please fill all required Balance fields');
+    // --- Open Modal Handlers ---
+    const handleOpenAddModal = () => {
+        setEditingInvoiceId(null);
+        setModalInvoice({ Bill_Number: '', Firm_Name: '', Date: '', Amount: '', Category: 'Hardware', Items: [] });
+        setSelectedFile(null);
+        setNewItem({ Hardware_Item: '', Quantity: 1, Warranty: '', Warranty_Upto: '', Item_Details: '', OEM_Software: '' });
+        setEditingModalItemIdx(null);
+        setShowModal(true);
+    };
+
+    const handleOpenEditModal = (inv) => {
+        setEditingInvoiceId(inv.id);
+        setModalInvoice({
+            Bill_Number: inv.Bill_Number || '',
+            Firm_Name: inv.Firm_Name || '',
+            Date: inv.Date || '',
+            Amount: inv.Amount || '',
+            Category: inv.Category || 'Hardware',
+            Items: inv.Items ? inv.Items.map(item => ({ ...item })) : []
+        });
+        setSelectedFile(null);
+        setNewItem({ Hardware_Item: '', Quantity: 1, Warranty: '', Warranty_Upto: '', Item_Details: '', OEM_Software: '' });
+        setEditingModalItemIdx(null);
+        setShowModal(true);
+    };
+
+    const handleCloseModal = () => {
+        setShowModal(false);
+        setEditingInvoiceId(null);
+        setEditingModalItemIdx(null);
+    };
+
+    // --- Save (Create or Update) ---
+    const handleSaveInvoice = async () => {
+        if (!modalInvoice.Bill_Number || !modalInvoice.Firm_Name || !modalInvoice.Date || !modalInvoice.Amount) {
+            showAlert('error', 'Please fill all required fields');
             return;
         }
 
@@ -118,76 +135,38 @@ const Invoices = () => {
             }
 
             const payload = {
-                data: newInvoice,
+                data: modalInvoice,
                 fileData: fileData,
                 fileName: fileName
             };
 
-            const res = await fetch('http://localhost:3001/api/invoices', {
-                method: 'POST',
+            const url = editingInvoiceId
+                ? `http://localhost:3001/api/invoices/${editingInvoiceId}`
+                : 'http://localhost:3001/api/invoices';
+            const method = editingInvoiceId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
             if (res.ok) {
-                showAlert('success', 'Invoice Added');
-                setShowModal(false);
-                setNewInvoice({ Bill_Number: '', Firm_Name: '', Date: '', Amount: '', Category: 'Hardware', Items: [] });
-                setSelectedFile(null);
+                showAlert('success', editingInvoiceId ? 'Invoice Updated' : 'Invoice Added');
+                handleCloseModal();
                 fetchInvoices();
             } else {
                 const err = await res.json();
-                showAlert('error', err.error || 'Failed to add invoice');
+                showAlert('error', err.error || 'Failed to save invoice');
             }
         } catch (error) {
-            showAlert('error', 'Error adding invoice');
+            showAlert('error', 'Error saving invoice');
         } finally {
             setProcessing(false);
         }
     };
 
-    const handleUpdateInvoiceMaster = async (id) => {
-        setProcessing(true);
-        try {
-            // Find current invoice to preserve items
-            const currentInv = invoices.find(i => i.id === id);
-            const updatedData = { ...editFormData, Items: currentInv.Items };
-
-            let fileData = null;
-            let fileName = null;
-            if (editFile) {
-                fileData = await toBase64(editFile);
-                fileName = editFile.name;
-            }
-
-            const payload = {
-                data: updatedData,
-                fileData: fileData,
-                fileName: fileName
-            };
-
-            const res = await fetch(`http://localhost:3001/api/invoices/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                showAlert('success', 'Invoice Updated');
-                setEditRowId(null);
-                setEditFormData({});
-                setEditFile(null);
-                fetchInvoices();
-            } else {
-                showAlert('error', 'Failed to update invoice');
-            }
-        } catch (error) {
-            showAlert('error', 'Error updating invoice');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
+    // --- Delete ---
     const handleDeleteInvoice = async (id) => {
         if (!window.confirm('Are you sure you want to delete this invoice?')) return;
         setProcessing(true);
@@ -206,80 +185,7 @@ const Invoices = () => {
         }
     };
 
-    // --- Item Level Actions (Directly on List) ---
-    const updateInvoiceItems = async (invoiceId, newItems) => {
-        setProcessing(true);
-        try {
-            const currentInv = invoices.find(i => i.id === invoiceId);
-            const updatedData = { ...currentInv, Items: newItems };
-
-            // FIX: Use JSON payload instead of FormData to prevent server errors
-            const payload = {
-                data: updatedData,
-                // fileData: null, // No file change
-                // fileName: null
-            };
-
-            const res = await fetch(`http://localhost:3001/api/invoices/${invoiceId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                fetchInvoices();
-                return true;
-            } else {
-                const err = await res.json();
-                console.error("Update failed:", err);
-                showAlert('error', 'Failed to update items: ' + (err.error || 'Server Error'));
-                return false;
-            }
-        } catch (error) {
-            console.error("Network error:", error);
-            showAlert('error', 'Error updating items');
-            return false;
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const handleAddItemToList = async (invoiceId) => {
-        if (!newItemForList.Hardware_Item || !newItemForList.Quantity) {
-            showAlert('error', 'Item Name and Quantity required');
-            return;
-        }
-        const currentInv = invoices.find(i => i.id === invoiceId);
-        const newItems = [...(currentInv.Items || []), newItemForList];
-        const success = await updateInvoiceItems(invoiceId, newItems);
-        if (success) {
-            showAlert('success', 'Item Added');
-            setNewItemForList({ Hardware_Item: '', Quantity: 1, Warranty: '', Warranty_Upto: '', Item_Details: '', OEM_Software: '' });
-            setAddingItemToInvoiceId(null); // Close dialog after save
-        }
-    };
-
-    const handleUpdateItemInList = async (invoiceId, itemIndex) => {
-        const currentInv = invoices.find(i => i.id === invoiceId);
-        const newItems = [...currentInv.Items];
-        newItems[itemIndex] = editItemFormData;
-        const success = await updateInvoiceItems(invoiceId, newItems);
-        if (success) {
-            showAlert('success', 'Item Updated');
-            setEditingItemKey(null);
-            setEditItemFormData({});
-        }
-    };
-
-    const handleDeleteItemFromList = async (invoiceId, itemIndex) => {
-        if (!window.confirm('Delete this item?')) return;
-        const currentInv = invoices.find(i => i.id === invoiceId);
-        const newItems = [...currentInv.Items];
-        newItems.splice(itemIndex, 1);
-        const success = await updateInvoiceItems(invoiceId, newItems);
-        if (success) showAlert('success', 'Item Deleted');
-    };
-
+    // --- Excel ---
     const handleExcelDownload = async () => {
         setProcessing(true);
         try {
@@ -310,9 +216,7 @@ const Invoices = () => {
 
         setProcessing(true);
         try {
-            // Check if Electron API is available
             if (window.electronAPI && window.electronAPI.saveFile) {
-                // Electron mode: Use IPC to save file first
                 const arrayBuffer = await file.arrayBuffer();
                 const saveResult = await window.electronAPI.saveFile({
                     name: `invoices_${Date.now()}_${file.name}`,
@@ -323,7 +227,6 @@ const Invoices = () => {
                     throw new Error(saveResult.error || 'Failed to save file locally');
                 }
 
-                // Tell server to process the saved file
                 const savedFileName = saveResult.path.split('\\').pop() || saveResult.path.split('/').pop();
                 const res = await fetch('http://localhost:3001/api/invoices/upload', {
                     method: 'POST',
@@ -342,7 +245,6 @@ const Invoices = () => {
                     showAlert('error', result.error || 'Upload failed');
                 }
             } else {
-                // Browser fallback: Use base64 encoding
                 const reader = new FileReader();
                 reader.onload = async (event) => {
                     try {
@@ -365,7 +267,7 @@ const Invoices = () => {
                     }
                 };
                 reader.readAsDataURL(file);
-                return; // Exit early, processing state handled in reader callback
+                return;
             }
         } catch (error) {
             console.error('Upload error:', error);
@@ -376,7 +278,7 @@ const Invoices = () => {
         }
     };
 
-    // --- Computed Search (instant) ---
+    // --- Search ---
     const filteredInvoices = useMemo(() => {
         if (!searchQuery) return invoices;
         try {
@@ -398,32 +300,45 @@ const Invoices = () => {
         setSearchCriteria('Supplier Name');
     };
 
-    // --- Helpers ---
-    const addItemToInvoiceModal = () => {
+    // --- Modal Item Helpers ---
+    const addItemToModal = () => {
         if (!newItem.Hardware_Item || !newItem.Quantity) {
             showAlert('error', 'Item Name and Quantity required');
             return;
         }
-        setNewInvoice({ ...newInvoice, Items: [...newInvoice.Items, newItem] });
+        setModalInvoice({ ...modalInvoice, Items: [...modalInvoice.Items, { ...newItem }] });
         setNewItem({ Hardware_Item: '', Quantity: 1, Warranty: '', Warranty_Upto: '', Item_Details: '', OEM_Software: '' });
     };
 
-    const removeItemFromInvoiceModal = (index) => {
-        const updatedItems = [...newInvoice.Items];
+    const removeItemFromModal = (index) => {
+        const updatedItems = [...modalInvoice.Items];
         updatedItems.splice(index, 1);
-        setNewInvoice({ ...newInvoice, Items: updatedItems });
+        setModalInvoice({ ...modalInvoice, Items: updatedItems });
     };
 
+    const startEditModalItem = (index) => {
+        setEditingModalItemIdx(index);
+        setEditModalItemData({ ...modalInvoice.Items[index] });
+    };
+
+    const saveEditModalItem = () => {
+        if (editingModalItemIdx === null) return;
+        const updatedItems = [...modalInvoice.Items];
+        updatedItems[editingModalItemIdx] = { ...editModalItemData };
+        setModalInvoice({ ...modalInvoice, Items: updatedItems });
+        setEditingModalItemIdx(null);
+        setEditModalItemData({});
+    };
+
+    const cancelEditModalItem = () => {
+        setEditingModalItemIdx(null);
+        setEditModalItemData({});
+    };
+
+    // --- Misc Helpers ---
     const showAlert = (type, msg) => {
         setAlert({ type, message: msg });
         setTimeout(() => setAlert(null), 3000);
-    };
-
-    const startEditMaster = (inv) => {
-        setEditRowId(inv.id);
-        const { Items, ...masterData } = inv; // Clone to avoid direct mutation issues?
-        setEditFormData({ ...inv }); // Edit everything
-        setEditFile(null);
     };
 
     const toggleRow = (id) => {
@@ -433,14 +348,7 @@ const Invoices = () => {
         setExpandedRowIds(newSet);
     };
 
-    const startEditItem = (invoiceId, item, index) => {
-        setEditingItemKey(`${invoiceId}-${index}`);
-        setEditItemFormData({ ...item });
-    };
-
     // --- Render ---
-    const currentItems = filteredInvoices; // Add pagination later if needed
-
     return (
         <div className="page-container">
             {processing && <div className="processing-overlay"><div className="spinner"></div><p>Processing...</p></div>}
@@ -453,7 +361,7 @@ const Invoices = () => {
 
             <div className="toolbar">
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                    <button className="btn btn-primary" onClick={handleOpenAddModal}>
                         <FontAwesomeIcon icon={faPlus} /> New Invoice
                     </button>
                     <button className="btn btn-outline" onClick={() => bulkUploadRef.current.click()}>
@@ -481,6 +389,7 @@ const Invoices = () => {
                 </div>
             </div>
 
+            {/* ====== Table ====== */}
             <div className="table-responsive">
                 <table className="supplier-table">
                     <thead>
@@ -500,123 +409,37 @@ const Invoices = () => {
                         {filteredInvoices.length > 0 ? filteredInvoices.map(inv => (
                             <React.Fragment key={inv.id}>
                                 <tr className={expandedRowIds.has(inv.id) ? 'expanded-row-parent' : ''}>
-                                    {editRowId === inv.id ? (
-                                        <>
-                                            <td></td>
-                                            <td>{inv.Serial_Number}</td>
-                                            <td><input type="text" value={editFormData.Bill_Number} onChange={(e) => setEditFormData({ ...editFormData, Bill_Number: e.target.value })} style={{ width: '100%' }} /></td>
-                                            <td>
-                                                <input
-                                                    type="text"
-                                                    list="suppliers-edit-datalist"
-                                                    value={editFormData.Firm_Name}
-                                                    onChange={(e) => setEditFormData({ ...editFormData, Firm_Name: e.target.value })}
-                                                    style={{ width: '100%' }}
-                                                />
-                                                <datalist id="suppliers-edit-datalist">
-                                                    {suppliers.map(s => <option key={s.Supplier_ID} value={s.Supplier_Name} />)}
-                                                </datalist>
-                                            </td>
-                                            <td><input type="date" value={editFormData.Date} onChange={(e) => setEditFormData({ ...editFormData, Date: e.target.value })} style={{ width: '100%' }} /></td>
-                                            <td><input type="number" value={editFormData.Amount} onChange={(e) => setEditFormData({ ...editFormData, Amount: e.target.value })} style={{ width: '100%' }} /></td>
-                                            <td>
-                                                <select value={editFormData.Category} onChange={(e) => setEditFormData({ ...editFormData, Category: e.target.value })}>
-                                                    <option value="Hardware">Hardware</option>
-                                                    <option value="Software">Software</option>
-                                                </select>
-                                            </td>
-                                            <td><input type="file" onChange={(e) => setEditFile(e.target.files[0])} style={{ width: '120px' }} /></td>
-                                            <td>
-                                                <div className="action-buttons">
-                                                    <button className="btn-icon update" title="Update" onClick={() => handleUpdateInvoiceMaster(inv.id)}><FontAwesomeIcon icon={faSave} /></button>
-                                                    <button className="btn-icon cancel" title="Cancel" onClick={() => setEditRowId(null)}><FontAwesomeIcon icon={faBan} /></button>
-                                                </div>
-                                            </td>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <td onClick={() => toggleRow(inv.id)} style={{ cursor: 'pointer', textAlign: 'center' }}>
-                                                <FontAwesomeIcon icon={expandedRowIds.has(inv.id) ? faChevronUp : faChevronDown} />
-                                            </td>
-                                            <td>{inv.Serial_Number}</td>
-                                            <td>{inv.Bill_Number}</td>
-                                            <td>{inv.Firm_Name}</td>
-                                            <td>{formatDate(inv.Date)}</td>
-                                            <td>{inv.Amount}</td>
-                                            <td>{inv.Category}</td>
-                                            <td>
-                                                {inv.Bill_PDF ?
-                                                    <a href={`http://localhost:3001/uploads/${inv.Bill_PDF}`} target="_blank" rel="noreferrer">
-                                                        <FontAwesomeIcon icon={faFilePdf} style={{ color: 'red' }} />
-                                                    </a>
-                                                    : '-'}
-                                            </td>
-                                            <td>
-                                                <div className="action-buttons">
-                                                    <button className="btn-icon edit" title="Edit" onClick={() => startEditMaster(inv)}><FontAwesomeIcon icon={faEdit} /></button>
-                                                    <button className="btn-icon delete" title="Delete" onClick={() => handleDeleteInvoice(inv.id)}><FontAwesomeIcon icon={faTrash} /></button>
-                                                </div>
-                                            </td>
-                                        </>
-                                    )}
+                                    <td onClick={() => toggleRow(inv.id)} style={{ cursor: 'pointer', textAlign: 'center' }}>
+                                        <FontAwesomeIcon icon={expandedRowIds.has(inv.id) ? faChevronUp : faChevronDown} />
+                                    </td>
+                                    <td>{inv.Serial_Number}</td>
+                                    <td>{inv.Bill_Number}</td>
+                                    <td>{inv.Firm_Name}</td>
+                                    <td>{formatDate(inv.Date)}</td>
+                                    <td>{inv.Amount}</td>
+                                    <td>{inv.Category}</td>
+                                    <td>
+                                        {inv.Bill_PDF ?
+                                            <a href={`http://localhost:3001/uploads/${inv.Bill_PDF}`} target="_blank" rel="noreferrer">
+                                                <FontAwesomeIcon icon={faFilePdf} style={{ color: 'red' }} />
+                                            </a>
+                                            : '-'}
+                                    </td>
+                                    <td>
+                                        <div className="action-buttons">
+                                            <button className="btn-icon edit" title="Edit" onClick={() => handleOpenEditModal(inv)}><FontAwesomeIcon icon={faEdit} /></button>
+                                            <button className="btn-icon delete" title="Delete" onClick={() => handleDeleteInvoice(inv.id)}><FontAwesomeIcon icon={faTrash} /></button>
+                                        </div>
+                                    </td>
                                 </tr>
-                                {/* Expanded Details */}
+
+                                {/* Expanded Details (Read-Only) */}
                                 {expandedRowIds.has(inv.id) && (
                                     <tr className="expanded-row-details">
                                         <td colSpan="9" style={{ backgroundColor: '#f9f9f9', padding: '15px' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                                 <strong>Items for Invoice {inv.Bill_Number}</strong>
-                                                {addingItemToInvoiceId !== inv.id && (
-                                                    <button className="btn btn-small" onClick={() => setAddingItemToInvoiceId(inv.id)}><FontAwesomeIcon icon={faPlus} /> Add New Item</button>
-                                                )}
                                             </div>
-
-                                            {/* Add Item Form (Inline) */}
-                                            {addingItemToInvoiceId === inv.id && (
-                                                <div className="inline-add-item-form">
-                                                    <div className="inline-form-row">
-                                                        <div className="form-group-inline" style={{ flex: 1.5 }}>
-                                                            <label>Product</label>
-                                                            <select className="form-select" value={newItemForList.Hardware_Item} onChange={(e) => setNewItemForList({ ...newItemForList, Hardware_Item: e.target.value })}>
-                                                                <option value="">Select</option>
-                                                                {hardwareOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                            </select>
-                                                        </div>
-                                                        <div className="form-group-inline" style={{ width: '80px' }}>
-                                                            <label>Qty</label>
-                                                            <input type="number" className="form-input" value={newItemForList.Quantity} onChange={(e) => setNewItemForList({ ...newItemForList, Quantity: e.target.value })} />
-                                                        </div>
-                                                        <div className="form-group-inline" style={{ width: '120px' }}>
-                                                            <label>Warranty</label>
-                                                            <select className="form-select" value={newItemForList.Warranty} onChange={(e) => setNewItemForList({ ...newItemForList, Warranty: e.target.value })}>
-                                                                <option value="">Select</option>
-                                                                <option value="1 Year">1 Year</option>
-                                                                <option value="2 Years">2 Years</option>
-                                                                <option value="3 Years">3 Years</option>
-                                                                <option value="4 Years">4 Years</option>
-                                                                <option value="5 Years">5 Years</option>
-                                                                <option value="6 Years">6 Years</option>
-                                                            </select>
-                                                        </div>
-                                                        <div className="form-group-inline" style={{ width: '140px' }}>
-                                                            <label>Warranty Upto</label>
-                                                            <input type="date" className="form-input" value={newItemForList.Warranty_Upto} onChange={(e) => setNewItemForList({ ...newItemForList, Warranty_Upto: e.target.value })} />
-                                                        </div>
-                                                        <div className="form-group-inline" style={{ flex: 2 }}>
-                                                            <label>Details</label>
-                                                            <input type="text" className="form-input" value={newItemForList.Item_Details} onChange={(e) => setNewItemForList({ ...newItemForList, Item_Details: e.target.value })} />
-                                                        </div>
-                                                        <div className="form-group-inline" style={{ flex: 1 }}>
-                                                            <label>OEM</label>
-                                                            <input type="text" className="form-input" value={newItemForList.OEM_Software} onChange={(e) => setNewItemForList({ ...newItemForList, OEM_Software: e.target.value })} />
-                                                        </div>
-                                                        <div className="action-buttons" style={{ paddingBottom: '2px' }}>
-                                                            <button className="btn-icon update" title="Save Item" onClick={() => handleAddItemToList(inv.id)}><FontAwesomeIcon icon={faCheck} /></button>
-                                                            <button className="btn-icon cancel" title="Cancel" onClick={() => setAddingItemToInvoiceId(null)}><FontAwesomeIcon icon={faTimes} /></button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
 
                                             {inv.Items && inv.Items.length > 0 ? (
                                                 <table className="items-table" style={{ width: '100%', marginTop: '5px', borderCollapse: 'collapse' }}>
@@ -628,62 +451,19 @@ const Invoices = () => {
                                                             <th style={{ padding: '8px', border: '1px solid #ddd' }}>Warranty Upto</th>
                                                             <th style={{ padding: '8px', border: '1px solid #ddd' }}>Details</th>
                                                             <th style={{ padding: '8px', border: '1px solid #ddd' }}>OEM Software</th>
-                                                            <th style={{ padding: '8px', border: '1px solid #ddd' }}>Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {inv.Items.map((item, idx) => {
-                                                            const itemKey = `${inv.id}-${idx}`;
-                                                            return (
-                                                                <tr key={idx} style={{ backgroundColor: '#fff' }}>
-                                                                    {editingItemKey === itemKey ? (
-                                                                        <>
-                                                                            <td>
-                                                                                <select value={editItemFormData.Hardware_Item} onChange={(e) => setEditItemFormData({ ...editItemFormData, Hardware_Item: e.target.value })}>
-                                                                                    {hardwareOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                                                </select>
-                                                                            </td>
-                                                                            <td><input type="number" style={{ width: '50px' }} value={editItemFormData.Quantity} onChange={(e) => setEditItemFormData({ ...editItemFormData, Quantity: e.target.value })} /></td>
-                                                                            <td>
-                                                                                <select value={editItemFormData.Warranty} onChange={(e) => setEditItemFormData({ ...editItemFormData, Warranty: e.target.value })} style={{ width: '100px', padding: '4px' }}>
-                                                                                    <option value="">Select</option>
-                                                                                    <option value="1 Year">1 Year</option>
-                                                                                    <option value="2 Years">2 Years</option>
-                                                                                    <option value="3 Years">3 Years</option>
-                                                                                    <option value="4 Years">4 Years</option>
-                                                                                    <option value="5 Years">5 Years</option>
-                                                                                    <option value="6 Years">6 Years</option>
-                                                                                </select>
-                                                                            </td>
-                                                                            <td><input type="date" value={editItemFormData.Warranty_Upto} onChange={(e) => setEditItemFormData({ ...editItemFormData, Warranty_Upto: e.target.value })} /></td>
-                                                                            <td><input type="text" value={editItemFormData.Item_Details} onChange={(e) => setEditItemFormData({ ...editItemFormData, Item_Details: e.target.value })} /></td>
-                                                                            <td><input type="text" value={editItemFormData.OEM_Software} onChange={(e) => setEditItemFormData({ ...editItemFormData, OEM_Software: e.target.value })} /></td>
-                                                                            <td>
-                                                                                <div className="action-buttons">
-                                                                                    <button className="btn-icon update" onClick={() => handleUpdateItemInList(inv.id, idx)}><FontAwesomeIcon icon={faSave} /></button>
-                                                                                    <button className="btn-icon cancel" onClick={() => setEditingItemKey(null)}><FontAwesomeIcon icon={faBan} /></button>
-                                                                                </div>
-                                                                            </td>
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Hardware_Item}</td>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Quantity}</td>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Warranty}</td>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>{formatDate(item.Warranty_Upto)}</td>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Item_Details}</td>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.OEM_Software}</td>
-                                                                            <td style={{ padding: '8px', border: '1px solid #ddd' }}>
-                                                                                <div className="action-buttons">
-                                                                                    <button className="btn-icon edit" onClick={() => startEditItem(inv.id, item, idx)}><FontAwesomeIcon icon={faEdit} /></button>
-                                                                                    <button className="btn-icon delete" onClick={() => handleDeleteItemFromList(inv.id, idx)}><FontAwesomeIcon icon={faTrash} /></button>
-                                                                                </div>
-                                                                            </td>
-                                                                        </>
-                                                                    )}
-                                                                </tr>
-                                                            );
-                                                        })}
+                                                        {inv.Items.map((item, idx) => (
+                                                            <tr key={idx} style={{ backgroundColor: '#fff' }}>
+                                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Hardware_Item}</td>
+                                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Quantity}</td>
+                                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Warranty}</td>
+                                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{formatDate(item.Warranty_Upto)}</td>
+                                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.Item_Details}</td>
+                                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.OEM_Software}</td>
+                                                            </tr>
+                                                        ))}
                                                     </tbody>
                                                 </table>
                                             ) : <p style={{ fontStyle: 'italic', color: '#666' }}>No items saved for this invoice.</p>}
@@ -698,17 +478,19 @@ const Invoices = () => {
                 </table>
             </div>
 
-            {/* Modal - New Invoice */}
+            {/* ====== Modal - Add / Edit Invoice ====== */}
             {showModal && (
                 <div className="modal-overlay">
                     <div className="modal-content" style={{ maxWidth: '960px' }}>
-                        <div className="modal-header"><h3>New Invoice</h3></div>
+                        <div className="modal-header">
+                            <h3>{editingInvoiceId ? 'Edit Invoice' : 'New Invoice'}</h3>
+                        </div>
                         <div className="modal-body">
                             {/* Master Form */}
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Bill Number <span className="required">*</span></label>
-                                    <input type="text" className="form-input" value={newInvoice.Bill_Number} onChange={(e) => setNewInvoice({ ...newInvoice, Bill_Number: e.target.value })} />
+                                    <input type="text" className="form-input" value={modalInvoice.Bill_Number} onChange={(e) => setModalInvoice({ ...modalInvoice, Bill_Number: e.target.value })} />
                                 </div>
                                 <div className="form-group">
                                     <label>Firm Name <span className="required">*</span></label>
@@ -716,8 +498,8 @@ const Invoices = () => {
                                         type="text"
                                         className="form-input"
                                         list="suppliers-datalist"
-                                        value={newInvoice.Firm_Name}
-                                        onChange={(e) => setNewInvoice({ ...newInvoice, Firm_Name: e.target.value })}
+                                        value={modalInvoice.Firm_Name}
+                                        onChange={(e) => setModalInvoice({ ...modalInvoice, Firm_Name: e.target.value })}
                                         placeholder="Search or select supplier"
                                     />
                                     <datalist id="suppliers-datalist">
@@ -726,30 +508,30 @@ const Invoices = () => {
                                 </div>
                                 <div className="form-group">
                                     <label>Date <span className="required">*</span></label>
-                                    <input type="date" className="form-input" value={newInvoice.Date} onChange={(e) => setNewInvoice({ ...newInvoice, Date: e.target.value })} />
+                                    <input type="date" className="form-input" value={modalInvoice.Date} onChange={(e) => setModalInvoice({ ...modalInvoice, Date: e.target.value })} />
                                 </div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Amount (INR) <span className="required">*</span></label>
-                                    <input type="number" className="form-input" value={newInvoice.Amount} onChange={(e) => setNewInvoice({ ...newInvoice, Amount: e.target.value })} />
+                                    <input type="number" className="form-input" value={modalInvoice.Amount} onChange={(e) => setModalInvoice({ ...modalInvoice, Amount: e.target.value })} />
                                 </div>
                                 <div className="form-group">
                                     <label>Category <span className="required">*</span></label>
-                                    <select className="form-select" value={newInvoice.Category} onChange={(e) => setNewInvoice({ ...newInvoice, Category: e.target.value })}>
+                                    <select className="form-select" value={modalInvoice.Category} onChange={(e) => setModalInvoice({ ...modalInvoice, Category: e.target.value })}>
                                         <option value="Hardware">Hardware</option>
                                         <option value="Software">Software</option>
                                     </select>
                                 </div>
                                 <div className="form-group">
-                                    <label>Bill PDF</label>
+                                    <label>Bill PDF {editingInvoiceId ? '(Replace)' : ''}</label>
                                     <input type="file" className="form-input" onChange={(e) => setSelectedFile(e.target.files[0])} accept="application/pdf" />
                                 </div>
                             </div>
 
                             <hr style={{ margin: '15px 0', border: '0', borderTop: '1px solid #ddd' }} />
 
-                            {/* Items Sub-Form (Modal) */}
+                            {/* Items Sub-Form */}
                             <h4>Invoice Items</h4>
                             <div className="form-row" style={{ alignItems: 'end' }}>
                                 <div className="form-group">
@@ -790,35 +572,106 @@ const Invoices = () => {
                                     <input type="text" className="form-input" placeholder="Win 11 / Office 365" value={newItem.OEM_Software} onChange={(e) => setNewItem({ ...newItem, OEM_Software: e.target.value })} />
                                 </div>
                                 <div className="form-group" style={{ marginTop: '24px' }}>
-                                    <button className="btn btn-secondary" onClick={addItemToInvoiceModal} type="button">
+                                    <button className="btn btn-secondary" onClick={addItemToModal} type="button">
                                         <FontAwesomeIcon icon={faPlus} /> Add Item
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Added Items List (Modal) */}
-                            {newInvoice.Items.length > 0 && (
+                            {/* Added Items List (Read-Only Rows) */}
+                            {modalInvoice.Items.length > 0 && (
                                 <table className="supplier-table" style={{ marginTop: '10px' }}>
-                                    <thead><tr><th>Item</th><th>Qty</th><th>Warranty</th><th>Details</th><th>OEM</th><th>Action</th></tr></thead>
+                                    <thead>
+                                        <tr>
+                                            <th>Item</th>
+                                            <th>Qty</th>
+                                            <th>Warranty</th>
+                                            <th>Warranty Upto</th>
+                                            <th>Details</th>
+                                            <th>OEM</th>
+                                            <th style={{ width: '90px', textAlign: 'center' }}>Action</th>
+                                        </tr>
+                                    </thead>
                                     <tbody>
-                                        {newInvoice.Items.map((item, idx) => (
+                                        {modalInvoice.Items.map((item, idx) => (
                                             <tr key={idx}>
                                                 <td>{item.Hardware_Item}</td>
                                                 <td>{item.Quantity}</td>
                                                 <td>{item.Warranty}</td>
+                                                <td>{formatDate(item.Warranty_Upto)}</td>
                                                 <td>{item.Item_Details}</td>
                                                 <td>{item.OEM_Software}</td>
-                                                <td><button className="btn-icon delete" onClick={() => removeItemFromInvoiceModal(idx)}><FontAwesomeIcon icon={faTrash} /></button></td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <div className="action-buttons">
+                                                        <button className="btn-icon edit" title="Edit" onClick={() => startEditModalItem(idx)}><FontAwesomeIcon icon={faEdit} /></button>
+                                                        <button className="btn-icon delete" title="Delete" onClick={() => removeItemFromModal(idx)}><FontAwesomeIcon icon={faTrash} /></button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
                             )}
 
+                            {/* ====== Sub-Popup: Edit Item ====== */}
+                            {editingModalItemIdx !== null && (
+                                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <div style={{ backgroundColor: '#fff', borderRadius: '10px', padding: '25px', width: '600px', maxWidth: '95vw', boxShadow: '0 8px 30px rgba(0,0,0,0.25)' }}>
+                                        <h4 style={{ marginBottom: '18px', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Edit Item</h4>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label>Product</label>
+                                                <select className="form-select" value={editModalItemData.Hardware_Item} onChange={(e) => setEditModalItemData({ ...editModalItemData, Hardware_Item: e.target.value })}>
+                                                    {hardwareOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="form-group" style={{ width: '100px' }}>
+                                                <label>Qty</label>
+                                                <input type="number" className="form-input" value={editModalItemData.Quantity} onChange={(e) => setEditModalItemData({ ...editModalItemData, Quantity: e.target.value })} />
+                                            </div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label>Warranty</label>
+                                                <select className="form-select" value={editModalItemData.Warranty} onChange={(e) => setEditModalItemData({ ...editModalItemData, Warranty: e.target.value })}>
+                                                    <option value="">Select</option>
+                                                    <option value="1 Year">1 Year</option>
+                                                    <option value="2 Years">2 Years</option>
+                                                    <option value="3 Years">3 Years</option>
+                                                    <option value="4 Years">4 Years</option>
+                                                    <option value="5 Years">5 Years</option>
+                                                    <option value="6 Years">6 Years</option>
+                                                </select>
+                                            </div>
+                                            <div className="form-group">
+                                                <label>Warranty Upto</label>
+                                                <input type="date" className="form-input" value={editModalItemData.Warranty_Upto} onChange={(e) => setEditModalItemData({ ...editModalItemData, Warranty_Upto: e.target.value })} />
+                                            </div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group" style={{ flex: 2 }}>
+                                                <label>Details / Specs</label>
+                                                <input type="text" className="form-input" value={editModalItemData.Item_Details} onChange={(e) => setEditModalItemData({ ...editModalItemData, Item_Details: e.target.value })} />
+                                            </div>
+                                            <div className="form-group" style={{ flex: 1 }}>
+                                                <label>OEM Software</label>
+                                                <input type="text" className="form-input" value={editModalItemData.OEM_Software} onChange={(e) => setEditModalItemData({ ...editModalItemData, OEM_Software: e.target.value })} />
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '18px' }}>
+                                            <button className="btn btn-primary" onClick={saveEditModalItem}>Save Item</button>
+                                            <button className="btn btn-outline" onClick={cancelEditModalItem}>Cancel</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-primary" onClick={handleCreateInvoice}>Save Invoice</button>
-                            <button className="btn btn-outline" onClick={() => setShowModal(false)}>Close</button>
+                            <button className="btn btn-primary" onClick={handleSaveInvoice}>
+                                {editingInvoiceId ? 'Update Invoice' : 'Save Invoice'}
+                            </button>
+                            <button className="btn btn-outline" onClick={handleCloseModal}>Close</button>
                         </div>
                     </div>
                 </div>

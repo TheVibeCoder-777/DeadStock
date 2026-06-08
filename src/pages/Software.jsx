@@ -9,7 +9,7 @@ import {
     faDownload,
     faSearch,
     faTimes,
-    faFileAlt,
+    faFilePdf,
     faUpload
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -18,13 +18,16 @@ const Software = () => {
     const [employees, setEmployees] = useState([]);
     const [invoices, setInvoices] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
+    const [sectionsConfig, setSectionsConfig] = useState([]);
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
     const [alert, setAlert] = useState(null);
 
-    // Search
     const [searchQuery, setSearchQuery] = useState('');
     const [employeeSearch, setEmployeeSearch] = useState('');
+
+    // Bulk Delete
+    const [selectedIds, setSelectedIds] = useState([]);
 
     // Modal
     const [showModal, setShowModal] = useState(false);
@@ -53,34 +56,36 @@ const Software = () => {
         fetchData();
     }, []);
 
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchData = async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
-            const [swRes, empRes, invRes, supRes] = await Promise.all([
+            const [swRes, empRes, invRes, supRes, cfgRes] = await Promise.all([
                 fetch('http://localhost:3001/api/software'),
                 fetch('http://localhost:3001/api/employees'),
                 fetch('http://localhost:3001/api/invoices'),
-                fetch('http://localhost:3001/api/suppliers')
+                fetch('http://localhost:3001/api/suppliers'),
+                fetch('http://localhost:3001/api/employees/config')
             ]);
 
-            const [swData, empData, invData, supData] = await Promise.all([
+            const [swData, empData, invData, supData, cfgData] = await Promise.all([
                 swRes.json(),
                 empRes.json(),
                 invRes.json(),
-                supRes.json()
+                supRes.json(),
+                cfgRes.json()
             ]);
 
             setSoftware(swData);
             setEmployees(empData);
             setInvoices(invData);
             setSuppliers(supData);
-            console.log('Suppliers loaded:', supData.length, 'items');
-            console.log('First supplier:', supData[0]);
+            setSectionsConfig(cfgData.sections || []);
+            setSelectedIds([]);
         } catch (error) {
             console.error('Fetch error:', error);
-            showAlert('error', 'Failed to fetch data');
+            if (!silent) showAlert('error', 'Failed to fetch data');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -91,21 +96,37 @@ const Software = () => {
 
     // --- Computed Search (instant) ---
     const filteredSoftware = useMemo(() => {
-        if (!searchQuery) return software;
-        try {
-            const query = searchQuery.toLowerCase();
-            return software.filter(s => {
-                try {
-                    return String(s.Software_Name || '').toLowerCase().includes(query) ||
-                        String(s.Bill_Number || '').toLowerCase().includes(query) ||
-                        String(s.Vendor_Name || '').toLowerCase().includes(query) ||
-                        String(s.Issued_To || '').toLowerCase().includes(query);
-                } catch { return false; }
-            });
-        } catch { return software; }
+        let list = software;
+        if (searchQuery) {
+            try {
+                const query = searchQuery.toLowerCase();
+                list = list.filter(s => {
+                    try {
+                        return String(s.Software_Name || '').toLowerCase().includes(query) ||
+                            String(s.Bill_Number || '').toLowerCase().includes(query) ||
+                            String(s.Vendor_Name || '').toLowerCase().includes(query) ||
+                            String(s.Issued_To || '').toLowerCase().includes(query);
+                    } catch { return false; }
+                });
+            } catch { /* keep list */ }
+        }
+        // Sort by Purchase_Date descending
+        return [...list].sort((a, b) => {
+            const da = a.Purchase_Date ? new Date(a.Purchase_Date) : new Date(0);
+            const db2 = b.Purchase_Date ? new Date(b.Purchase_Date) : new Date(0);
+            return db2 - da;
+        });
     }, [searchQuery, software]);
 
+    // Unique sections from employees and config
+    const uniqueSections = useMemo(() => {
+        const secs = new Set(sectionsConfig);
+        employees.forEach(emp => { if (emp.Section) secs.add(emp.Section); });
+        return [...secs].sort();
+    }, [employees, sectionsConfig]);
+
     const handleOpenModal = (item = null) => {
+        fetchData(true); // Silently refresh employee and section data for the dropdowns
         if (item) {
             setEditingItem(item);
             setFormData({
@@ -217,6 +238,42 @@ const Software = () => {
         }
     };
 
+    const toggleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedIds(filteredSoftware.map(item => item.id));
+        } else {
+            setSelectedIds([]);
+        }
+    };
+
+    const toggleSelectOne = (e, id) => {
+        if (e.target.checked) {
+            setSelectedIds([...selectedIds, id]);
+        } else {
+            setSelectedIds(selectedIds.filter(itemId => itemId !== id));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.length === 0) return;
+        if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} selected items?`)) return;
+
+        setProcessing(true);
+        try {
+            await Promise.all(selectedIds.map(id =>
+                fetch(`http://localhost:3001/api/software/${id}`, { method: 'DELETE' })
+            ));
+            showAlert('success', `${selectedIds.length} items deleted successfully`);
+            setSelectedIds([]);
+            fetchData();
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            showAlert('error', 'Failed to delete some items');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
     const handleDownloadExcel = async () => {
         setProcessing(true);
         try {
@@ -266,8 +323,9 @@ const Software = () => {
         }
     };
 
-    const handleDownloadDocument = (id) => {
-        window.open(`http://localhost:3001/api/software/${id}/document`, '_blank');
+    const handleDownloadDocument = (documentName) => {
+        if (!documentName) return;
+        window.open(`http://localhost:3001/uploads/${documentName}`, '_blank');
     };
 
     const handleBillNumberChange = (billNo) => {
@@ -313,6 +371,11 @@ const Software = () => {
                     <button className="btn btn-outline" onClick={handleDownloadExcel}>
                         <FontAwesomeIcon icon={faDownload} /> Download Excel
                     </button>
+                    {selectedIds.length > 0 && (
+                        <button className="btn btn-danger" onClick={handleBulkDelete} style={{ backgroundColor: '#dc3545', color: 'white', border: 'none' }}>
+                            <FontAwesomeIcon icon={faTrash} /> Delete Selected ({selectedIds.length})
+                        </button>
+                    )}
                     <input type="file" ref={uploadFileRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={handleBulkUpload} />
                 </div>
 
@@ -333,6 +396,14 @@ const Software = () => {
                     <table className="supplier-table">
                         <thead>
                             <tr>
+                                <th style={{ width: '40px', textAlign: 'center' }}>
+                                    <input
+                                        type="checkbox"
+                                        onChange={toggleSelectAll}
+                                        checked={selectedIds.length === filteredSoftware.length && filteredSoftware.length > 0}
+                                    />
+                                </th>
+                                <th style={{ width: '80px', textAlign: 'center' }}>Actions</th>
                                 <th>Software Name</th>
                                 <th>Quantity</th>
                                 <th>Source</th>
@@ -342,16 +413,32 @@ const Software = () => {
                                 <th>Amount (INR)</th>
                                 <th>Valid Upto</th>
                                 <th>Issued To</th>
-                                <th>License Code</th>
-                                <th>Additional Info</th>
+                                <th style={{ minWidth: '160px' }}>License Code</th>
+                                <th style={{ minWidth: '180px' }}>Additional Info</th>
                                 <th>Multiple Issued</th>
-                                <th>Document</th>
-                                <th>Actions</th>
+                                <th>PDF</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredSoftware.map(item => (
                                 <tr key={item.id}>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <input
+                                            type="checkbox"
+                                            onChange={(e) => toggleSelectOne(e, item.id)}
+                                            checked={selectedIds.includes(item.id)}
+                                        />
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <div className="action-buttons" style={{ justifyContent: 'center' }}>
+                                            <button className="btn-icon edit" onClick={() => handleOpenModal(item)} title="Edit">
+                                                <FontAwesomeIcon icon={faEdit} style={{ color: '#008b8b' }} />
+                                            </button>
+                                            <button className="btn-icon delete" onClick={() => handleDelete(item.id)} title="Delete">
+                                                <FontAwesomeIcon icon={faTrash} style={{ color: '#dc3545' }} />
+                                            </button>
+                                        </div>
+                                    </td>
                                     <td><strong>{item.Software_Name}</strong></td>
                                     <td>{item.Quantity}</td>
                                     <td>{item.Source}</td>
@@ -361,23 +448,15 @@ const Software = () => {
                                     <td>₹{item.Amount}</td>
                                     <td>{formatDate(item.Valid_Upto)}</td>
                                     <td>{item.Issued_To}</td>
-                                    <td>{item.License_Code}</td>
-                                    <td>{item.Additional_Info}</td>
+                                    <td style={{ whiteSpace: 'normal', wordBreak: 'break-word', maxWidth: '200px' }}>{item.License_Code}</td>
+                                    <td style={{ whiteSpace: 'normal', wordBreak: 'break-word', maxWidth: '220px' }}>{item.Additional_Info}</td>
                                     <td>{Array.isArray(item.Multiple_Issued) ? item.Multiple_Issued.join(', ') : item.Multiple_Issued}</td>
                                     <td>
-                                        {item.Document && (
-                                            <button className="btn-icon" onClick={() => handleDownloadDocument(item.id)} title="Download Document">
-                                                <FontAwesomeIcon icon={faFileAlt} />
-                                            </button>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <button className="btn-icon edit" onClick={() => handleOpenModal(item)} title="Edit">
-                                            <FontAwesomeIcon icon={faEdit} />
-                                        </button>
-                                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)} title="Delete">
-                                            <FontAwesomeIcon icon={faTrash} />
-                                        </button>
+                                        {item.Document ?
+                                            <a href={`http://localhost:3001/uploads/${item.Document}`} target="_blank" rel="noreferrer" title="View PDF">
+                                                <FontAwesomeIcon icon={faFilePdf} style={{ color: 'red', fontSize: '1.2em' }} />
+                                            </a>
+                                            : '-'}
                                     </td>
                                 </tr>
                             ))}
@@ -513,17 +592,35 @@ const Software = () => {
 
                                 <div className="form-group">
                                     <label>Issued To</label>
+                                    <select
+                                        className="form-input"
+                                        value={formData.Issued_To?.startsWith('Employee:') || formData.Issued_To?.startsWith('Section:') ? formData.Issued_To.split(':')[0] : ''}
+                                        onChange={e => setFormData({ ...formData, Issued_To: e.target.value ? e.target.value + ':' : '' })}
+                                        style={{ marginBottom: '6px' }}
+                                    >
+                                        <option value="">Select Type</option>
+                                        <option value="Employee">Employee</option>
+                                        <option value="Section">Section</option>
+                                    </select>
                                     <input
                                         type="text"
                                         className="form-input"
-                                        placeholder="Type to search employees..."
-                                        value={formData.Issued_To}
-                                        onChange={e => setFormData({ ...formData, Issued_To: e.target.value })}
-                                        list="employees-datalist"
+                                        placeholder={formData.Issued_To?.startsWith('Section:') ? 'Type to search section...' : 'Type to search employees...'}
+                                        value={formData.Issued_To?.includes(':') ? formData.Issued_To.split(':').slice(1).join(':') : formData.Issued_To || ''}
+                                        onChange={e => {
+                                            const prefix = formData.Issued_To?.includes(':') ? formData.Issued_To.split(':')[0] + ':' : '';
+                                            setFormData({ ...formData, Issued_To: prefix + e.target.value });
+                                        }}
+                                        list={formData.Issued_To?.startsWith('Section:') ? 'sections-datalist' : 'employees-datalist'}
                                     />
                                     <datalist id="employees-datalist">
                                         {employees.map(emp => (
                                             <option key={emp.PIN} value={emp.Name}>{emp.Name} ({emp.PIN})</option>
+                                        ))}
+                                    </datalist>
+                                    <datalist id="sections-datalist">
+                                        {uniqueSections.map(sec => (
+                                            <option key={sec} value={sec}>{sec}</option>
                                         ))}
                                     </datalist>
                                 </div>
@@ -563,8 +660,8 @@ const Software = () => {
                                     {employees
                                         .filter(emp =>
                                             employeeSearch === '' ||
-                                            emp.Name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-                                            emp.PIN.toLowerCase().includes(employeeSearch.toLowerCase())
+                                            String(emp.Name || '').toLowerCase().includes(employeeSearch.toLowerCase()) ||
+                                            String(emp.PIN || '').toLowerCase().includes(employeeSearch.toLowerCase())
                                         )
                                         .map(emp => (
                                             <div key={emp.PIN} style={{ marginBottom: '5px' }}>

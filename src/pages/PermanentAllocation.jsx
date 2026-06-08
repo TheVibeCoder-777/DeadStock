@@ -243,14 +243,14 @@ const PermanentAllocation = () => {
                                     <td>{item.Speed || '-'}</td>
                                     <td>{item.IP_Address || '-'}</td>
                                     <td>{item.MAC_Address || '-'}</td>
-                                    <td>{item.Company_Serial_Number || '-'}</td>
+                                    <td>{item.Company_Serial || '-'}</td>
                                     <td>{item.Additional_Item}</td>
                                     <td>{item.Status}</td>
                                     <td>{item.Remarks}</td>
                                     <td>
                                         {item.Notesheet_Doc ? (
-                                            <a href={`http://localhost:3001/api/permanent-allocation/download/${item.Notesheet_Doc}`} download className="btn-icon">
-                                                <FontAwesomeIcon icon={faDownload} />
+                                            <a href={`http://localhost:3001/uploads/${item.Notesheet_Doc}`} target="_blank" rel="noreferrer">
+                                                <FontAwesomeIcon icon={faFilePdf} style={{ color: 'red' }} />
                                             </a>
                                         ) : '-'}
                                     </td>

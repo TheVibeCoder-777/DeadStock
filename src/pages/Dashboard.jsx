@@ -17,8 +17,8 @@ const Dashboard = () => {
     const [selectedItem, setSelectedItem] = useState(null);
     const [bifurcationData, setBifurcationData] = useState(null);
 
-    // Hardware Status (Under Repair / Not Working)
-    const [statusCounts, setStatusCounts] = useState({ underRepairCount: 0, notWorkingCount: 0 });
+    // Hardware Status (Under Repair / Not Working / Server Room / E-Waste)
+    const [statusCounts, setStatusCounts] = useState({ underRepairCount: 0, notWorkingCount: 0, serverRoomCount: 0, eWasteCount: 0 });
     const [selectedStatusType, setSelectedStatusType] = useState(null);
     const [statusDetailList, setStatusDetailList] = useState(null);
 
@@ -107,10 +107,11 @@ const Dashboard = () => {
     };
 
     // Click on status tile to load detail list
-    const handleStatusTileClick = async (statusType) => {
-        setSelectedStatusType(statusType);
+    const handleStatusTileClick = async (type, isLocation = false) => {
+        setSelectedStatusType(type);
         try {
-            const res = await fetch(`http://localhost:3001/api/dashboard/hardware-status?status=${encodeURIComponent(statusType)}`);
+            const queryParam = isLocation ? `location=${encodeURIComponent(type)}` : `status=${encodeURIComponent(type)}`;
+            const res = await fetch(`http://localhost:3001/api/dashboard/hardware-status?${queryParam}`);
             const data = await res.json();
             setStatusDetailList(data);
         } catch (error) {
@@ -288,7 +289,9 @@ const Dashboard = () => {
                                     </thead>
                                     <tbody>
                                         {bifurcationData.items.map((item, idx) => (
-                                            <tr key={idx}>
+                                            <tr key={idx} style={{
+                                                backgroundColor: item.Status === 'Not Working' ? '#ffebeb' : item.Status === 'Under Repair' ? '#fff3e0' : 'transparent'
+                                            }}>
                                                 <td>{item.EDP_Serial}</td>
                                                 <td>{item.Make || '-'}</td>
                                                 <td>{item.Capacity || '-'}</td>
@@ -357,6 +360,48 @@ const Dashboard = () => {
                         >
                             <div style={{ fontSize: '2em', fontWeight: 'bold' }}>{statusCounts.notWorkingCount || 0}</div>
                             <div style={{ fontSize: '0.9em', marginTop: '5px', fontWeight: 600 }}>Not Working</div>
+                        </div>
+
+                        {/* Server Room Tile */}
+                        <div
+                            className="stock-tile"
+                            onClick={() => handleStatusTileClick('Server Room', true)}
+                            style={{
+                                background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+                                color: '#0d47a1',
+                                padding: '20px',
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                transition: 'transform 0.2s, box-shadow 0.2s',
+                                boxShadow: selectedStatusType === 'Server Room' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <div style={{ fontSize: '2em', fontWeight: 'bold' }}>{statusCounts.serverRoomCount || 0}</div>
+                            <div style={{ fontSize: '0.9em', marginTop: '5px', fontWeight: 600 }}>Server Room</div>
+                        </div>
+
+                        {/* E-Waste Store Tile */}
+                        <div
+                            className="stock-tile"
+                            onClick={() => handleStatusTileClick('E-Waste Store', true)}
+                            style={{
+                                background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+                                color: '#0d47a1',
+                                padding: '20px',
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                transition: 'transform 0.2s, box-shadow 0.2s',
+                                boxShadow: selectedStatusType === 'E-Waste Store' ? '0 8px 16px rgba(0,0,0,0.3)' : '0 4px 8px rgba(0,0,0,0.1)'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <div style={{ fontSize: '2em', fontWeight: 'bold' }}>{statusCounts.eWasteCount || 0}</div>
+                            <div style={{ fontSize: '0.9em', marginTop: '5px', fontWeight: 600 }}>E-Waste Store</div>
                         </div>
                     </div>
 
@@ -476,7 +521,7 @@ const Dashboard = () => {
                                                 <th>PIN</th>
                                                 <th>Name</th>
                                                 <th>Present Post</th>
-                                                <th>Section</th>
+                                                <th>Mobile</th>
                                                 <th>Office</th>
                                                 <th>Hqr/Field</th>
                                             </tr>
@@ -486,7 +531,7 @@ const Dashboard = () => {
                                                 <td>{result.employee.PIN}</td>
                                                 <td>{result.employee.Name}</td>
                                                 <td>{result.employee.Present_Post || '-'}</td>
-                                                <td>{result.employee.Section || '-'}</td>
+                                                <td>{result.employee.Mobile || '-'}</td>
                                                 <td>{result.employee.Office || '-'}</td>
                                                 <td>{result.employee.Hqr_Field || '-'}</td>
                                             </tr>

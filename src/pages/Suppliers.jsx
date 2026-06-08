@@ -9,17 +9,14 @@ const Suppliers = () => {
     const [processing, setProcessing] = useState(false); // Global processing overlay
     const [alert, setAlert] = useState(null); // { type: 'success'|'error', message: '' }
 
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 25;
-
     // Search
     const [searchCriteria, setSearchCriteria] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Modal
+    // Modal (Add / Edit)
     const [showModal, setShowModal] = useState(false);
-    const [newSupplier, setNewSupplier] = useState({
+    const [editingSupplierId, setEditingSupplierId] = useState(null);
+    const [modalSupplier, setModalSupplier] = useState({
         Supplier_ID: '',
         Category: '',
         Supplier_Name: '',
@@ -32,10 +29,6 @@ const Suppliers = () => {
         Phone_Number: '',
         Email: ''
     });
-
-    // Inline Editing
-    const [editRowId, setEditRowId] = useState(null);
-    const [editFormData, setEditFormData] = useState({});
 
     // --- Effects ---
     useEffect(() => {
@@ -57,56 +50,62 @@ const Suppliers = () => {
         }
     };
 
-    const handleCreateSupplier = async () => {
-        // Validation
-        if (!newSupplier.Supplier_ID || !newSupplier.Category || !newSupplier.Supplier_Name || !newSupplier.Address_1 || !newSupplier.City) {
-            showAlert('error', 'Please fill in all required fields (including Supplier ID)');
+    const handleOpenAddModal = () => {
+        let maxId = 0;
+        suppliers.forEach(s => {
+            if (s.Supplier_ID && s.Supplier_ID.startsWith('S')) {
+                const num = parseInt(s.Supplier_ID.substring(1), 10);
+                if (!isNaN(num) && num > maxId) maxId = num;
+            }
+        });
+        const nextId = `S${String(maxId + 1).padStart(3, '0')}`;
+        setEditingSupplierId(null);
+        setModalSupplier({
+            Supplier_ID: nextId, Category: '', Supplier_Name: '', Address_1: '', Address_2: '',
+            City: '', State: '', PIN_Code: '', POC_Person: '', Phone_Number: '', Email: ''
+        });
+        setShowModal(true);
+    };
+
+    const handleOpenEditModal = (supplier) => {
+        setEditingSupplierId(supplier.Supplier_ID);
+        setModalSupplier({ ...supplier });
+        setShowModal(true);
+    };
+
+    const handleCloseModal = () => {
+        setShowModal(false);
+        setEditingSupplierId(null);
+    };
+
+    const handleSaveSupplier = async () => {
+        if (!modalSupplier.Supplier_ID || !modalSupplier.Category || !modalSupplier.Supplier_Name || !modalSupplier.Address_1 || !modalSupplier.City) {
+            showAlert('error', 'Please fill in all required fields');
             return;
         }
 
         setProcessing(true);
         try {
-            const response = await fetch('http://localhost:3001/api/suppliers', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newSupplier)
-            });
-            if (response.ok) {
-                showAlert('success', 'New Supplier Added');
-                setShowModal(false);
-                setNewSupplier({
-                    Supplier_ID: '', Category: '', Supplier_Name: '', Address_1: '', Address_2: '',
-                    City: '', State: '', PIN_Code: '', POC_Person: '', Phone_Number: '', Email: ''
-                });
-                fetchSuppliers();
-            } else {
-                showAlert('error', 'Failed to add supplier');
-            }
-        } catch (error) {
-            showAlert('error', 'Error adding supplier');
-        } finally {
-            setProcessing(false);
-        }
-    };
+            const url = editingSupplierId
+                ? `http://localhost:3001/api/suppliers/${editingSupplierId}`
+                : 'http://localhost:3001/api/suppliers';
+            const method = editingSupplierId ? 'PUT' : 'POST';
 
-    const handleUpdateSupplier = async (id) => {
-        setProcessing(true);
-        try {
-            const response = await fetch(`http://localhost:3001/api/suppliers/${id}`, {
-                method: 'PUT',
+            const response = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(editFormData)
+                body: JSON.stringify(modalSupplier)
             });
 
             if (response.ok) {
-                showAlert('success', 'Supplier Details Updated');
-                setEditRowId(null);
+                showAlert('success', editingSupplierId ? 'Supplier Updated' : 'Supplier Added');
+                handleCloseModal();
                 fetchSuppliers();
             } else {
-                showAlert('error', 'Failed to update supplier');
+                showAlert('error', editingSupplierId ? 'Failed to update supplier' : 'Failed to add supplier');
             }
         } catch (error) {
-            showAlert('error', 'Error updating supplier');
+            showAlert('error', 'Error saving supplier');
         } finally {
             setProcessing(false);
         }
@@ -291,25 +290,16 @@ const Suppliers = () => {
 
     // --- Logic Helpers ---
     const generateSupplierID = () => {
-        // Find existing max ID
         let maxId = 0;
         suppliers.forEach(s => {
             if (s.Supplier_ID && s.Supplier_ID.startsWith('S')) {
-                const numStr = s.Supplier_ID.substring(1);
-                const num = parseInt(numStr, 10);
-                if (!isNaN(num) && num > maxId) {
-                    maxId = num;
-                }
+                const num = parseInt(s.Supplier_ID.substring(1), 10);
+                if (!isNaN(num) && num > maxId) maxId = num;
             }
         });
-
-        const nextNum = maxId + 1;
-        // Pad with leading zeros (e.g., 001)
-        const id = `S${String(nextNum).padStart(3, '0')}`;
-
-        // Double check existence (shouldn't happen with max+1 logic but good to be safe)
+        const id = `S${String(maxId + 1).padStart(3, '0')}`;
         if (!suppliers.some(s => s.Supplier_ID === id)) {
-            setNewSupplier({ ...newSupplier, Supplier_ID: id });
+            setModalSupplier({ ...modalSupplier, Supplier_ID: id });
         } else {
             showAlert('error', 'Error generating ID');
         }
@@ -347,24 +337,9 @@ const Suppliers = () => {
         setTimeout(() => setAlert(null), 3000);
     };
 
-    const startEdit = (supplier) => {
-        setEditRowId(supplier.Supplier_ID);
-        setEditFormData({ ...supplier });
-    };
 
-    const cancelEdit = () => {
-        setEditRowId(null);
-        setEditFormData({});
-    };
 
-    // --- Render Helpers ---
-    // Pagination logic
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = filteredSuppliers.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(filteredSuppliers.length / itemsPerPage);
 
-    const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
     return (
         <div className="page-container">
@@ -392,22 +367,7 @@ const Suppliers = () => {
             {/* Toolbar */}
             <div className="toolbar">
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn btn-primary" onClick={() => {
-                        // Auto-generate Supplier ID when opening modal
-                        let maxId = 0;
-                        suppliers.forEach(s => {
-                            if (s.Supplier_ID && s.Supplier_ID.startsWith('S')) {
-                                const num = parseInt(s.Supplier_ID.substring(1), 10);
-                                if (!isNaN(num) && num > maxId) maxId = num;
-                            }
-                        });
-                        const nextId = `S${String(maxId + 1).padStart(3, '0')}`;
-                        setNewSupplier({
-                            Supplier_ID: nextId, Category: '', Supplier_Name: '', Address_1: '', Address_2: '',
-                            City: '', State: '', PIN_Code: '', POC_Person: '', Phone_Number: '', Email: ''
-                        });
-                        setShowModal(true);
-                    }}>
+                    <button className="btn btn-primary" onClick={handleOpenAddModal}>
                         <FontAwesomeIcon icon={faPlus} /> New Supplier
                     </button>
                     {/* Excel Buttons */}
@@ -450,165 +410,132 @@ const Suppliers = () => {
                 </div>
             </div>
 
-            {/* Modal */}
-            {
-                showModal && (
-                    <div className="modal-overlay">
-                        <div className="modal-content">
-                            <div className="modal-header">
-                                <h3>Add New Supplier</h3>
-                            </div>
-                            <div className="modal-body">
-                                <div className="form-group-row">
-                                    <label>Supplier ID (Auto):</label>
-                                    <div className="input-with-button">
-                                        <input type="text" value={newSupplier.Supplier_ID} readOnly className="form-input readonly" />
-                                        <button className="btn btn-small" onClick={generateSupplierID}>Generate</button>
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Category <span className="required">*</span></label>
-                                    <select
-                                        value={newSupplier.Category}
-                                        onChange={(e) => setNewSupplier({ ...newSupplier, Category: e.target.value })}
-                                        className="form-select"
-                                    >
-                                        <option value="">Select Category</option>
-                                        <option value="Hardware">Hardware</option>
-                                        <option value="Software">Software</option>
-                                        <option value="Consumables">Consumables</option>
-                                        <option value="All (H/S/C)">All (H/S/C)</option>
-                                    </select>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Supplier Name <span className="required">*</span></label>
-                                    <input type="text" className="form-input" value={newSupplier.Supplier_Name} onChange={(e) => setNewSupplier({ ...newSupplier, Supplier_Name: e.target.value })} />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Address 1 <span className="required">*</span></label>
-                                    <input type="text" className="form-input" value={newSupplier.Address_1} onChange={(e) => setNewSupplier({ ...newSupplier, Address_1: e.target.value })} />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Address 2</label>
-                                    <input type="text" className="form-input" value={newSupplier.Address_2} onChange={(e) => setNewSupplier({ ...newSupplier, Address_2: e.target.value })} />
-                                </div>
-
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>City <span className="required">*</span></label>
-                                        <input type="text" className="form-input" value={newSupplier.City} onChange={(e) => setNewSupplier({ ...newSupplier, City: e.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>State</label>
-                                        <input type="text" className="form-input" value={newSupplier.State} onChange={(e) => setNewSupplier({ ...newSupplier, State: e.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>PIN Code</label>
-                                        <input type="number" className="form-input" value={newSupplier.PIN_Code} onChange={(e) => setNewSupplier({ ...newSupplier, PIN_Code: e.target.value })} />
-                                    </div>
-                                </div>
-
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>POC Person</label>
-                                        <input type="text" className="form-input" value={newSupplier.POC_Person} onChange={(e) => setNewSupplier({ ...newSupplier, POC_Person: e.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Phone Number</label>
-                                        <input type="text" className="form-input" value={newSupplier.Phone_Number} onChange={(e) => setNewSupplier({ ...newSupplier, Phone_Number: e.target.value })} />
-                                    </div>
-                                </div>
-                                <div className="form-group">
-                                    <label>Email</label>
-                                    <input type="text" className="form-input" value={newSupplier.Email} onChange={(e) => setNewSupplier({ ...newSupplier, Email: e.target.value })} />
+            {/* Modal - Add / Edit Supplier */}
+            {showModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h3>{editingSupplierId ? 'Edit Supplier' : 'Add New Supplier'}</h3>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group-row">
+                                <label>Supplier ID {editingSupplierId ? '' : '(Auto)'}:</label>
+                                <div className="input-with-button">
+                                    <input type="text" value={modalSupplier.Supplier_ID} readOnly className="form-input readonly" />
+                                    {!editingSupplierId && <button className="btn btn-small" onClick={generateSupplierID}>Generate</button>}
                                 </div>
                             </div>
-                            <div className="modal-footer">
-                                <button className="btn btn-primary" onClick={handleCreateSupplier}>Save</button>
-                                <button className="btn btn-outline" onClick={() => setShowModal(false)}>Close</button>
+
+                            <div className="form-group">
+                                <label>Category <span className="required">*</span></label>
+                                <select
+                                    value={modalSupplier.Category}
+                                    onChange={(e) => setModalSupplier({ ...modalSupplier, Category: e.target.value })}
+                                    className="form-select"
+                                >
+                                    <option value="">Select Category</option>
+                                    <option value="Hardware">Hardware</option>
+                                    <option value="Software">Software</option>
+                                    <option value="Consumables">Consumables</option>
+                                    <option value="All (H/S/C)">All (H/S/C)</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Supplier Name <span className="required">*</span></label>
+                                <input type="text" className="form-input" value={modalSupplier.Supplier_Name} onChange={(e) => setModalSupplier({ ...modalSupplier, Supplier_Name: e.target.value })} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Address 1 <span className="required">*</span></label>
+                                <input type="text" className="form-input" value={modalSupplier.Address_1} onChange={(e) => setModalSupplier({ ...modalSupplier, Address_1: e.target.value })} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Address 2</label>
+                                <input type="text" className="form-input" value={modalSupplier.Address_2} onChange={(e) => setModalSupplier({ ...modalSupplier, Address_2: e.target.value })} />
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>City <span className="required">*</span></label>
+                                    <input type="text" className="form-input" value={modalSupplier.City} onChange={(e) => setModalSupplier({ ...modalSupplier, City: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>State</label>
+                                    <input type="text" className="form-input" value={modalSupplier.State} onChange={(e) => setModalSupplier({ ...modalSupplier, State: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>PIN Code</label>
+                                    <input type="number" className="form-input" value={modalSupplier.PIN_Code} onChange={(e) => setModalSupplier({ ...modalSupplier, PIN_Code: e.target.value })} />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>POC Person</label>
+                                    <input type="text" className="form-input" value={modalSupplier.POC_Person} onChange={(e) => setModalSupplier({ ...modalSupplier, POC_Person: e.target.value })} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Phone Number</label>
+                                    <input type="text" className="form-input" value={modalSupplier.Phone_Number} onChange={(e) => setModalSupplier({ ...modalSupplier, Phone_Number: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label>Email</label>
+                                <input type="text" className="form-input" value={modalSupplier.Email} onChange={(e) => setModalSupplier({ ...modalSupplier, Email: e.target.value })} />
                             </div>
                         </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-primary" onClick={handleSaveSupplier}>
+                                {editingSupplierId ? 'Update Supplier' : 'Save Supplier'}
+                            </button>
+                            <button className="btn btn-outline" onClick={handleCloseModal}>Close</button>
+                        </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
             {/* Table */}
             <div className="table-responsive">
                 <table className="supplier-table">
                     <thead>
                         <tr>
+                            <th style={{ width: '7%' }}>Actions</th>
                             <th style={{ width: '5%' }}>ID</th>
                             <th style={{ width: '7%' }}>Category</th>
-                            <th style={{ width: '23%' }}>Name</th>
+                            <th style={{ width: '20%' }}>Name</th>
                             <th style={{ width: '8%' }}>Address 1</th>
                             <th style={{ width: '10%' }}>Address 2</th>
                             <th style={{ width: '7%' }}>City</th>
                             <th style={{ width: '7%' }}>State</th>
                             <th style={{ width: '7%' }}>PIN</th>
-                            <th style={{ width: '10%' }}>POC</th>
-                            <th style={{ width: '9%' }}>Phone</th>
+                            <th style={{ width: '8%' }}>POC</th>
+                            <th style={{ width: '8%' }}>Phone</th>
                             <th style={{ width: '8%' }}>Email</th>
-                            <th style={{ width: '7%' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {currentItems.length > 0 ? (
-                            currentItems.map((s) => (
+                        {filteredSuppliers.length > 0 ? (
+                            filteredSuppliers.map((s) => (
                                 <tr key={s.Supplier_ID}>
-                                    {editRowId === s.Supplier_ID ? (
-                                        // Editing Row
-                                        <>
-                                            <td>{s.Supplier_ID}</td>
-                                            <td>
-                                                <select value={editFormData.Category} onChange={(e) => setEditFormData({ ...editFormData, Category: e.target.value })}>
-                                                    <option value="Hardware">Hardware</option>
-                                                    <option value="Software">Software</option>
-                                                    <option value="Consumables">Consumables</option>
-                                                    <option value="All (H/S/C)">All (H/S/C)</option>
-                                                </select>
-                                            </td>
-                                            <td><input value={editFormData.Supplier_Name} onChange={(e) => setEditFormData({ ...editFormData, Supplier_Name: e.target.value })} /></td>
-                                            <td><input value={editFormData.Address_1} onChange={(e) => setEditFormData({ ...editFormData, Address_1: e.target.value })} /></td>
-                                            <td><input value={editFormData.Address_2} onChange={(e) => setEditFormData({ ...editFormData, Address_2: e.target.value })} /></td>
-                                            <td><input value={editFormData.City} onChange={(e) => setEditFormData({ ...editFormData, City: e.target.value })} /></td>
-                                            <td><input value={editFormData.State} onChange={(e) => setEditFormData({ ...editFormData, State: e.target.value })} /></td>
-                                            <td><input value={editFormData.PIN_Code} onChange={(e) => setEditFormData({ ...editFormData, PIN_Code: e.target.value })} /></td>
-                                            <td><input value={editFormData.POC_Person} onChange={(e) => setEditFormData({ ...editFormData, POC_Person: e.target.value })} /></td>
-                                            <td><input value={editFormData.Phone_Number} onChange={(e) => setEditFormData({ ...editFormData, Phone_Number: e.target.value })} /></td>
-                                            <td><input value={editFormData.Email} onChange={(e) => setEditFormData({ ...editFormData, Email: e.target.value })} /></td>
-                                            <td>
-                                                <div className="action-buttons">
-                                                    <button className="btn-icon update" title="Update" onClick={() => handleUpdateSupplier(s.Supplier_ID)}><FontAwesomeIcon icon={faSave} /></button>
-                                                    <button className="btn-icon cancel" title="Cancel" onClick={cancelEdit}><FontAwesomeIcon icon={faBan} /></button>
-                                                </div>
-                                            </td>
-                                        </>
-                                    ) : (
-                                        // Viewing Row
-                                        <>
-                                            <td>{s.Supplier_ID}</td>
-                                            <td>{s.Category}</td>
-                                            <td>{s.Supplier_Name}</td>
-                                            <td>{s.Address_1}</td>
-                                            <td>{s.Address_2}</td>
-                                            <td>{s.City}</td>
-                                            <td>{s.State}</td>
-                                            <td>{s.PIN_Code}</td>
-                                            <td>{s.POC_Person}</td>
-                                            <td>{s.Phone_Number}</td>
-                                            <td>{s.Email}</td>
-                                            <td>
-                                                <div className="action-buttons">
-                                                    <button className="btn-icon edit" title="Edit" onClick={() => startEdit(s)}><FontAwesomeIcon icon={faEdit} /></button>
-                                                    <button className="btn-icon delete" title="Delete" onClick={() => handleDeleteSupplier(s.id, s.Supplier_ID)}><FontAwesomeIcon icon={faTrash} /></button>
-                                                </div>
-                                            </td>
-                                        </>
-                                    )}
+                                    <td>
+                                        <div className="action-buttons">
+                                            <button className="btn-icon edit" title="Edit" onClick={() => handleOpenEditModal(s)}><FontAwesomeIcon icon={faEdit} /></button>
+                                            <button className="btn-icon delete" title="Delete" onClick={() => handleDeleteSupplier(s.id, s.Supplier_ID)}><FontAwesomeIcon icon={faTrash} /></button>
+                                        </div>
+                                    </td>
+                                    <td>{s.Supplier_ID}</td>
+                                    <td>{s.Category}</td>
+                                    <td>{s.Supplier_Name}</td>
+                                    <td>{s.Address_1}</td>
+                                    <td>{s.Address_2}</td>
+                                    <td>{s.City}</td>
+                                    <td>{s.State}</td>
+                                    <td>{s.PIN_Code}</td>
+                                    <td>{s.POC_Person}</td>
+                                    <td>{s.Phone_Number}</td>
+                                    <td>{s.Email}</td>
                                 </tr>
                             ))
                         ) : (
@@ -618,18 +545,6 @@ const Suppliers = () => {
                 </table>
             </div>
 
-            {/* Pagination */}
-            <div className="pagination">
-                {Array.from({ length: totalPages }, (_, i) => (
-                    <button
-                        key={i}
-                        onClick={() => paginate(i + 1)}
-                        className={currentPage === i + 1 ? 'active' : ''}
-                    >
-                        {i + 1}
-                    </button>
-                ))}
-            </div>
         </div >
     );
 };
